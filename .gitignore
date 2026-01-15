@@ -1,0 +1,26 @@
+# Node
+node_modules/
+
+# Vite
+build/
+dist/
+
+# Local env
+.env.local
+.env.*.local
+
+# Editor
+.DS_Store
+.vscode/
+
+# Tiles and data artifacts
+public/tiles/*.pmtiles
+public/tiles/*.mbtiles
+public/tiles/*.pbf
+
+data_raw/
+data_tiles/
+!/public/tiles/.gitkeep
+
+# Legacy example app (separate repo)
+Example/

@@ -1,0 +1,506 @@
+═══════════════════════════════════════════════════════════════════════════════
+  GUIDE DE DÉPLOIEMENT - ATLAS ACTION SITUÉE
+  Cloudflare Pages + Vector Tiles
+═══════════════════════════════════════════════════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. PRÉPARATION DES VECTOR TILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A. STRUCTURE DES DONNÉES ATTENDUE
+----------------------------------
+Vous devez avoir 3 jeux de données vector tiles (format .mbtiles ou .pmtiles) :
+
+1. segments.pmtiles (ou segments/{z}/{x}/{y}.pbf)
+   - Échelle : Tronçons de rue
+   - Géométrie : LineString
+
+2. carreau200.pmtiles (ou carreau200/{z}/{x}/{y}.pbf)
+   - Échelle : Grille 200m
+   - Géométrie : Polygon
+
+3. zoneTrafic.pmtiles (ou zoneTrafic/{z}/{x}/{y}.pbf)
+   - Échelle : Zones de trafic
+   - Géométrie : Polygon
+
+
+B. PROPRIÉTÉS REQUISES DANS CHAQUE FEATURE
+-------------------------------------------
+Chaque feature GeoJSON doit contenir ces propriétés :
+
+{
+  "type": "Feature",
+  "geometry": { ... },
+  "properties": {
+    // Score global
+    "score_marchabilite": 0.75,
+    
+    // Scores de classes d'attributs
+    "score_agrement": 0.82,
+    "score_attractivite": 0.68,
+    "score_securite": 0.71,
+    "score_infrastructure": 0.79,
+    
+    // Attributs - Agrément
+    "attente": 0.85,
+    "bruit": 0.78,
+    "temperature": 0.81,
+    "conflit_usage": 0.84,
+    "canopee": 0.83,
+    
+    // Attributs - Attractivité
+    "lac_cours_deau": 0.45,
+    "fontaines": 0.72,
+    "espaces_ouverts": 0.69,
+    "rez_actif": 0.73,
+    "tp": 0.81,
+    "amenite": 0.68,
+    
+    // Attributs - Sécurité
+    "accident": 0.65,
+    "zone_apaisee": 0.78,
+    "zone_pietonne": 0.62,
+    "vitesse": 0.79,
+    
+    // Attributs - Infrastructure
+    "connectivite": 0.82,
+    "largeur_trottoir": 0.76,
+    "chemin": 0.81,
+    "stationnement_genant": 0.72,
+    "topographie": 0.84
+  }
+}
+
+IMPORTANT: Tous les scores doivent être normalisés entre 0 et 1.
+
+
+C. OPTIONS D'HÉBERGEMENT DES TILES
+-----------------------------------
+
+OPTION 1 - PMTiles (RECOMMANDÉ pour Cloudflare)
+  ✓ Fichier unique par échelle
+  ✓ Optimisé pour le cloud storage
+  ✓ Pas de serveur tile nécessaire
+  ✓ Range requests HTTP
+
+  Placement : /public/tiles/segments.pmtiles
+              /public/tiles/carreau200.pmtiles
+              /public/tiles/zoneTrafic.pmtiles
+
+OPTION 2 - MBTiles + serveur tile
+  - Nécessite un serveur Node.js (tileserver-gl, martin, etc.)
+  - Peut être déployé sur Cloudflare Workers
+  - Plus complexe
+
+OPTION 3 - Tiles pré-générées (dossiers)
+  - Structure : /public/tiles/segments/{z}/{x}/{y}.pbf
+  - Lourd si beaucoup de zoom levels
+  - Fonctionne bien pour zones limitées
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. DÉPLOIEMENT SUR CLOUDFLARE PAGES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A. PRÉREQUIS
+-------------
+□ Compte Cloudflare (gratuit)
+□ Projet Git (GitHub, GitLab, ou Bitbucket)
+□ Node.js installé localement
+
+
+B. CONFIGURATION DU PROJET
+---------------------------
+
+1. Créer un fichier de build dans le projet :
+   
+   package.json - Ajouter les scripts :
+   {
+     "scripts": {
+       "dev": "vite",
+       "build": "vite build",
+       "preview": "vite preview"
+     }
+   }
+
+2. Créer wrangler.toml (optionnel mais recommandé) :
+   
+   name = "atlas-action-situee"
+   compatibility_date = "2024-01-01"
+   pages_build_output_dir = "dist"
+
+
+C. DÉPLOIEMENT VIA DASHBOARD CLOUDFLARE
+----------------------------------------
+
+1. Aller sur https://dash.cloudflare.com/
+2. Cliquer "Workers & Pages" → "Create application" → "Pages"
+3. Connecter votre repository Git
+4. Configuration du build :
+   
+   Framework preset: Vite
+   Build command: npm run build
+   Build output directory: dist
+   
+5. Variables d'environnement (si nécessaire) :
+   
+   VITE_MAPBOX_TOKEN = pk.eyJ1IjoibWFyYy1lZCIsImEiOiJjazdoeGZ5ZnAwZHRiM21tbnN5N3J3N2JtIn0.e49ygvA-P7W5FKt-nDW1FQ
+
+6. Cliquer "Save and Deploy"
+
+
+D. DÉPLOIEMENT VIA WRANGLER CLI
+--------------------------------
+
+1. Installer Wrangler :
+   npm install -g wrangler
+
+2. Login Cloudflare :
+   wrangler login
+
+3. Build le projet :
+   npm run build
+
+4. Déployer :
+   wrangler pages deploy dist --project-name=atlas-action-situee
+
+
+E. HÉBERGER LES TILES SUR CLOUDFLARE R2 (Recommandé)
+-----------------------------------------------------
+
+Si vos fichiers .pmtiles sont lourds (>25MB), utilisez R2 :
+
+1. Créer un bucket R2 :
+   wrangler r2 bucket create atlas-tiles
+
+2. Uploader les tiles :
+   wrangler r2 object put atlas-tiles/segments.pmtiles --file=./tiles/segments.pmtiles
+   wrangler r2 object put atlas-tiles/carreau200.pmtiles --file=./tiles/carreau200.pmtiles
+   wrangler r2 object put atlas-tiles/zoneTrafic.pmtiles --file=./tiles/zoneTrafic.pmtiles
+
+3. Activer l'accès public :
+   Dashboard → R2 → Votre bucket → Settings → Public Access → Allow
+
+4. URL d'accès : https://pub-xxxxx.r2.dev/segments.pmtiles
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. MODIFICATIONS DU CODE POUR VECTOR TILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A. INSTALLER LES DÉPENDANCES PMTILES (si vous utilisez PMTiles)
+----------------------------------------------------------------
+
+npm install pmtiles
+npm install mapbox-gl
+
+
+B. MODIFIER /components/Map.tsx
+--------------------------------
+
+CHANGEMENTS À FAIRE :
+
+1. Ajouter l'import PMTiles en haut du fichier :
+   
+   import { PMTiles, Protocol } from 'pmtiles';
+
+2. Dans le useEffect de map.on('load'), ajouter :
+
+   // Configuration PMTiles
+   const protocol = new Protocol();
+   mapboxgl.addProtocol('pmtiles', protocol.tile);
+
+   // Source des tiles selon l'échelle
+   const tileUrls = {
+     segment: 'pmtiles:///tiles/segments.pmtiles',
+     carreau200: 'pmtiles:///tiles/carreau200.pmtiles',
+     zoneTrafic: 'pmtiles:///tiles/zoneTrafic.pmtiles'
+   };
+
+   // Ajouter la source
+   map.addSource('data-source', {
+     type: 'vector',
+     url: tileUrls[scale]
+   });
+
+   // Ajouter la couche
+   map.addLayer({
+     id: 'data-layer',
+     type: 'line', // ou 'fill' pour carreau200 et zoneTrafic
+     source: 'data-source',
+     'source-layer': 'default', // vérifier le nom de votre source-layer
+     paint: {
+       'line-color': [
+         'interpolate',
+         ['linear'],
+         ['get', 'score_marchabilite'],
+         0, '#D35941',    // Rouge
+         0.5, '#F4C430',  // Jaune
+         1, '#6B7C59'     // Vert
+       ],
+       'line-width': 4
+     }
+   });
+
+3. Gérer le changement d'échelle dynamiquement :
+   
+   useEffect(() => {
+     if (!mapLoaded || !mapRef.current) return;
+     
+     const map = mapRef.current;
+     const tileUrls = {
+       segment: 'pmtiles:///tiles/segments.pmtiles',
+       carreau200: 'pmtiles:///tiles/carreau200.pmtiles',
+       zoneTrafic: 'pmtiles:///tiles/zoneTrafic.pmtiles'
+     };
+     
+     // Supprimer les anciennes couches/sources
+     if (map.getLayer('data-layer')) {
+       map.removeLayer('data-layer');
+     }
+     if (map.getSource('data-source')) {
+       map.removeSource('data-source');
+     }
+     
+     // Ajouter la nouvelle source
+     map.addSource('data-source', {
+       type: 'vector',
+       url: tileUrls[scale]
+     });
+     
+     // Type de géométrie selon l'échelle
+     const layerType = scale === 'segment' ? 'line' : 'fill';
+     
+     // Ajouter la nouvelle couche
+     map.addLayer({
+       id: 'data-layer',
+       type: layerType,
+       source: 'data-source',
+       'source-layer': 'default',
+       paint: layerType === 'line' ? {
+         'line-color': getColorExpression(),
+         'line-width': 4
+       } : {
+         'fill-color': getColorExpression(),
+         'fill-opacity': 0.7
+       }
+     });
+   }, [scale, mapLoaded]);
+
+4. Créer une fonction pour l'expression de couleur dynamique :
+
+   const getColorExpression = () => {
+     let property = 'score_marchabilite'; // par défaut
+     
+     if (selectedAttribute) {
+       // Extraire le nom technique de l'attribut
+       const parts = selectedAttribute.split('.');
+       if (parts.length === 2) {
+         const attrInfo = attributeData[parts[0]]?.attributes.find(
+           (a: any) => a.name === parts[1]
+         );
+         if (attrInfo) {
+           property = attrInfo.technicalName;
+         }
+       }
+     } else if (selectedClass) {
+       // Utiliser le score de la classe
+       const classMap: any = {
+         'Agrément': 'score_agrement',
+         'Attractivité': 'score_attractivite',
+         'Sécurité': 'score_securite',
+         'Infrastructure': 'score_infrastructure'
+       };
+       property = classMap[selectedClass] || 'score_marchabilite';
+     }
+     
+     return [
+       'interpolate',
+       ['linear'],
+       ['get', property],
+       0, '#D35941',    // Rouge
+       0.5, '#F4C430',  // Jaune  
+       1, '#6B7C59'     // Vert
+     ];
+   };
+
+5. Ajouter le hover sur les features :
+
+   useEffect(() => {
+     if (!mapLoaded || !mapRef.current) return;
+     const map = mapRef.current;
+     
+     map.on('mousemove', 'data-layer', (e) => {
+       if (e.features && e.features.length > 0) {
+         const feature = e.features[0];
+         map.getCanvas().style.cursor = 'pointer';
+         
+         // Extraire les scores de la feature
+         const props = feature.properties;
+         const scores = extractScoresFromProperties(props);
+         onHoverSegment(scores);
+       }
+     });
+     
+     map.on('mouseleave', 'data-layer', () => {
+       map.getCanvas().style.cursor = '';
+       onHoverSegment(null);
+     });
+   }, [mapLoaded, onHoverSegment]);
+
+6. Fonction pour extraire les scores :
+
+   const extractScoresFromProperties = (props: any) => {
+     return {
+       Agrément: {
+         color: '#6B7C59',
+         favorable: true,
+         description: 'Est-ce agréable de marcher ici ?',
+         average: props.score_agrement,
+         attributes: [
+           { name: 'Temps d\'attente', technicalName: 'attente', value: props.attente },
+           { name: 'Niveau sonore', technicalName: 'bruit', value: props.bruit },
+           { name: 'Température', technicalName: 'temperature', value: props.temperature },
+           { name: 'Conflits d\'usage', technicalName: 'conflit_usage', value: props.conflit_usage },
+           { name: 'Couverture végétale', technicalName: 'canopee', value: props.canopee }
+         ]
+       },
+       Attractivité: {
+         color: '#4A5F7F',
+         favorable: true,
+         description: 'Y a-t-il des raisons de venir ici ?',
+         average: props.score_attractivite,
+         attributes: [
+           { name: 'Plans d\'eau', technicalName: 'lac_cours_deau', value: props.lac_cours_deau },
+           { name: 'Fontaines', technicalName: 'fontaines', value: props.fontaines },
+           { name: 'Espaces ouverts', technicalName: 'espaces_ouverts', value: props.espaces_ouverts },
+           { name: 'Commerces actifs', technicalName: 'rez_actif', value: props.rez_actif },
+           { name: 'Transports publics', technicalName: 'tp', value: props.tp },
+           { name: 'Aménités', technicalName: 'amenite', value: props.amenite }
+         ]
+       },
+       Sécurité: {
+         color: '#A55A4A',
+         favorable: false,
+         description: 'Puis-je marcher ici en sécurité ?',
+         average: props.score_securite,
+         attributes: [
+           { name: 'Historique accidents', technicalName: 'accident', value: props.accident },
+           { name: 'Zone apaisée', technicalName: 'zone_apaisee', value: props.zone_apaisee },
+           { name: 'Zone piétonne', technicalName: 'zone_pietonne', value: props.zone_pietonne },
+           { name: 'Limite de vitesse', technicalName: 'vitesse', value: props.vitesse }
+         ]
+       },
+       Infrastructure: {
+         color: '#7A6B5D',
+         favorable: true,
+         description: 'Est-ce possible de marcher ici ?',
+         average: props.score_infrastructure,
+         attributes: [
+           { name: 'Connectivité réseau', technicalName: 'connectivite', value: props.connectivite },
+           { name: 'Largeur trottoir', technicalName: 'largeur_trottoir', value: props.largeur_trottoir },
+           { name: 'Revêtement', technicalName: 'chemin', value: props.chemin },
+           { name: 'Stationnement gênant', technicalName: 'stationnement_genant', value: props.stationnement_genant },
+           { name: 'Pente', technicalName: 'topographie', value: props.topographie }
+         ]
+       }
+     };
+   };
+
+
+C. MODIFIER /components/ModeToggle.tsx
+---------------------------------------
+
+Désactiver temporairement la cyclabilité :
+
+export function ModeToggle({ mode, onModeChange }: ModeToggleProps) {
+  return (
+    <div className="bg-white rounded-full flex border border-[#D8D2CA] overflow-hidden">
+      <button
+        onClick={() => onModeChange('walkability')}
+        className={`px-4 py-2 flex items-center gap-2 transition-all text-xs ${
+          mode === 'walkability'
+            ? 'bg-[#D35941] text-white'
+            : 'text-[#5A5A5A] hover:text-[#1A1A1A]'
+        }`}
+        style={{ fontFamily: 'Arial, sans-serif' }}
+      >
+        <PersonStanding className="w-4 h-4" />
+        <span>Marchabilité</span>
+      </button>
+      <div className="w-px bg-[#D8D2CA]" />
+      <button
+        disabled={true}
+        className="px-4 py-2 flex items-center gap-2 text-xs text-[#CCCCCC] cursor-not-allowed opacity-50"
+        style={{ fontFamily: 'Arial, sans-serif' }}
+        title="Cyclabilité - En développement"
+      >
+        <Bike className="w-4 h-4" />
+        <span>Cyclabilité</span>
+      </button>
+    </div>
+  );
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. WORKFLOW DE MISE À JOUR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Développement local :
+   npm run dev
+   
+2. Test avant déploiement :
+   npm run build
+   npm run preview
+
+3. Commit et push vers Git :
+   git add .
+   git commit -m "Update with vector tiles"
+   git push origin main
+
+4. Cloudflare Pages déploie automatiquement !
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. CHECKLIST FINALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+□ Vector tiles générés avec toutes les propriétés requises
+□ Fichiers .pmtiles uploadés (dans /public/tiles/ ou R2)
+□ Dépendances npm installées (pmtiles, mapbox-gl)
+□ Code Map.tsx modifié pour charger les tiles
+□ Fonction extractScoresFromProperties implémentée
+□ Hover sur features connecté
+□ Gestion des 3 échelles fonctionnelle
+□ Cyclabilité désactivée dans ModeToggle
+□ Tests locaux OK (npm run dev)
+□ Build réussi (npm run build)
+□ Git repository connecté à Cloudflare Pages
+□ Premier déploiement lancé
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROBLÈME : Les tiles ne se chargent pas
+SOLUTION : Vérifier la console → Network → Vérifier que les .pmtiles sont 
+           accessibles. Vérifier le nom de la 'source-layer' avec mapbox-gl-inspect
+
+PROBLÈME : Les couleurs ne s'affichent pas
+SOLUTION : Vérifier que les propriétés existent dans les features avec 
+           console.log() dans le hover
+
+PROBLÈME : Le hover ne fonctionne pas
+SOLUTION : Vérifier que l'ID de couche 'data-layer' est correct et que 
+           l'événement mousemove est bien enregistré
+
+PROBLÈME : Build échoue sur Cloudflare
+SOLUTION : Vérifier package.json, vérifier que toutes les dépendances sont 
+           dans "dependencies" et pas "devDependencies"
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  Questions ? marc-ed@cloudflare.com (remplacer par votre contact)
+═══════════════════════════════════════════════════════════════════════════════
