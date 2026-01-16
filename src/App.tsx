@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Map } from './components/Map';
 import { AttributePanel } from './components/AttributePanel';
 import { InfoDialog } from './components/InfoDialog';
@@ -77,6 +77,8 @@ export default function App() {
   const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('quantile');
   const [debugParams, setDebugParams] = useState<{ attr: string; layerId: string; thresholds: number[] } | null>(null);
   const [attributeStats, setAttributeStats] = useState<Record<string, any>>({});
+  const hasCarreau200 = Boolean(import.meta.env.VITE_PM_TILES_CARREAU200 || import.meta.env.VITE_TILEJSON_CARREAU200);
+  const hasZoneTrafic = Boolean(import.meta.env.VITE_PM_TILES_ZONETRAFIC || import.meta.env.VITE_TILEJSON_ZONETRAFIC);
 
   // Calculer le score global
   const calculateGlobalScore = (data: any) => {
@@ -129,6 +131,14 @@ export default function App() {
     setSelectedClass(null);
   };
 
+  useEffect(() => {
+    if (scale === 'carreau200' && !hasCarreau200) {
+      setScale('segment');
+    } else if (scale === 'zoneTrafic' && !hasZoneTrafic) {
+      setScale('segment');
+    }
+  }, [scale, hasCarreau200, hasZoneTrafic]);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#EAE4DD]">
       {/* Header */}
@@ -148,7 +158,12 @@ export default function App() {
             <ModeToggle mode={mode} onModeChange={setMode} />
             
             {/* Scale Toggle */}
-            <ScaleToggle scale={scale} onScaleChange={setScale} />
+            <ScaleToggle
+              scale={scale}
+              onScaleChange={setScale}
+              availableCarreau200={hasCarreau200}
+              availableZoneTrafic={hasZoneTrafic}
+            />
 
             {/* Color Mode Toggle moved to Attribute Panel */}
             

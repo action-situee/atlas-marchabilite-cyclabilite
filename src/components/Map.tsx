@@ -32,6 +32,7 @@ export function Map({ selectedAttribute, selectedClass, attributeData, mode, sca
   const [attributeStats, setAttributeStats] = useState<Record<string, DataStats>>({}); // min/max/mean for each attribute
 
   const normalizePmtilesUrl = (url: string) => {
+    if (!url) return '';
     if (url.startsWith('pmtiles://')) return url;
     if (url.startsWith('http://') || url.startsWith('https://')) return `pmtiles://${url}`;
     if (url.startsWith('/')) return `pmtiles://${url}`;
@@ -100,23 +101,18 @@ export function Map({ selectedAttribute, selectedClass, attributeData, mode, sca
   setMapLoaded(true);
   setLoadingStage('initial');
 
-      const useTilejson = Boolean(
-        import.meta.env.VITE_TILEJSON_SEGMENT ||
-        import.meta.env.VITE_TILEJSON_WALKNET ||
-        import.meta.env.VITE_TILEJSON_CARREAU200 ||
-        import.meta.env.VITE_TILEJSON_ZONETRAFIC
-      );
-
       // Martin TileJSON endpoints and source-layer names
-      const SEG_TILEJSON = (import.meta.env.VITE_TILEJSON_SEGMENT as string) || (import.meta.env.VITE_TILEJSON_WALKNET as string) || 'http://localhost:3001/step3_index';
-      const CAR_TILEJSON = (import.meta.env.VITE_TILEJSON_CARREAU200 as string) || 'http://localhost:3001/carreau200';
-      const ZT_TILEJSON  = (import.meta.env.VITE_TILEJSON_ZONETRAFIC as string) || 'http://localhost:3001/zone_trafic';
+      const SEG_TILEJSON = (import.meta.env.VITE_TILEJSON_SEGMENT as string) || (import.meta.env.VITE_TILEJSON_WALKNET as string) || '';
+      const CAR_TILEJSON = (import.meta.env.VITE_TILEJSON_CARREAU200 as string) || '';
+      const ZT_TILEJSON  = (import.meta.env.VITE_TILEJSON_ZONETRAFIC as string) || '';
       const SEG_PM = normalizePmtilesUrl((import.meta.env.VITE_PM_TILES_SEGMENT as string) || (import.meta.env.VITE_PM_TILES_URL as string) || '/tiles/step3_index.pmtiles');
-      const CAR_PM = normalizePmtilesUrl((import.meta.env.VITE_PM_TILES_CARREAU200 as string) || '/tiles/carreau200.pmtiles');
-      const ZT_PM  = normalizePmtilesUrl((import.meta.env.VITE_PM_TILES_ZONETRAFIC as string) || '/tiles/zone_trafic.pmtiles');
-      const SEG_URL = useTilejson ? SEG_TILEJSON : SEG_PM;
-      const CAR_URL = useTilejson ? CAR_TILEJSON : CAR_PM;
-      const ZT_URL  = useTilejson ? ZT_TILEJSON : ZT_PM;
+      const CAR_PM = normalizePmtilesUrl((import.meta.env.VITE_PM_TILES_CARREAU200 as string) || '');
+      const ZT_PM  = normalizePmtilesUrl((import.meta.env.VITE_PM_TILES_ZONETRAFIC as string) || '');
+      const SEG_URL = SEG_TILEJSON ? SEG_TILEJSON : SEG_PM;
+      const CAR_URL = CAR_TILEJSON ? CAR_TILEJSON : CAR_PM;
+      const ZT_URL  = ZT_TILEJSON ? ZT_TILEJSON : ZT_PM;
+      const hasCar = Boolean(CAR_URL);
+      const hasZt = Boolean(ZT_URL);
 
       const SEG_LAYER = (import.meta.env.VITE_SEG_SOURCE_LAYER as string) || (import.meta.env.VITE_WALK_SOURCE_LAYER as string) || 'walknet';
       const CAR_LAYER = (import.meta.env.VITE_CAR_SOURCE_LAYER as string) || 'carreau200';
@@ -124,8 +120,12 @@ export function Map({ selectedAttribute, selectedClass, attributeData, mode, sca
 
       // Add sources
       map.addSource('segments', { type: 'vector', url: SEG_URL });
-      map.addSource('carreau200', { type: 'vector', url: CAR_URL });
-      map.addSource('zones_trafic', { type: 'vector', url: ZT_URL });
+      if (hasCar) {
+        map.addSource('carreau200', { type: 'vector', url: CAR_URL });
+      }
+      if (hasZt) {
+        map.addSource('zones_trafic', { type: 'vector', url: ZT_URL });
+      }
 
       // Find a good layer to insert polygons BEFORE so that basemap water/roads stay on top of our fills
       // Priority: put fills under water. If not found, put under first road/building/symbol.
@@ -149,53 +149,57 @@ export function Map({ selectedAttribute, selectedClass, attributeData, mode, sca
       // Add layers - order matters: first added = bottom, last added = top
       // Order: zones (bottom) -> carreaux -> segments (top)
       
-      map.addLayer({
-        id: 'zones-fill',
-        type: 'fill',
-        source: 'zones_trafic',
-        'source-layer': ZT_LAYER,
-        paint: {
-          'fill-color': '#96C8A6',
-          'fill-opacity': 0.5
-        },
-        layout: { visibility: 'none' }
-  }, beforePolygonsId);
-      
-      map.addLayer({
-        id: 'zones-outline',
-        type: 'line',
-        source: 'zones_trafic',
-        'source-layer': ZT_LAYER,
-        paint: { 'line-color': '#333', 'line-width': 0.3 },
-        layout: { visibility: 'none' }
-  }, beforePolygonsId);
+      if (hasZt) {
+        map.addLayer({
+          id: 'zones-fill',
+          type: 'fill',
+          source: 'zones_trafic',
+          'source-layer': ZT_LAYER,
+          paint: {
+            'fill-color': '#96C8A6',
+            'fill-opacity': 0.5
+          },
+          layout: { visibility: 'none' }
+        }, beforePolygonsId);
+        
+        map.addLayer({
+          id: 'zones-outline',
+          type: 'line',
+          source: 'zones_trafic',
+          'source-layer': ZT_LAYER,
+          paint: { 'line-color': '#333', 'line-width': 0.3 },
+          layout: { visibility: 'none' }
+        }, beforePolygonsId);
+      }
 
-      map.addLayer({
-        id: 'carreau200-fill',
-        type: 'fill',
-        source: 'carreau200',
-        'source-layer': CAR_LAYER,
-        paint: {
-          'fill-color': '#96C8A6',
-          'fill-opacity': 0.6,
-          'fill-antialias': true
-        },
-        layout: { visibility: 'none' }
-  // Segments go above transport/roads but under labels
-  }, beforeSymbolsId);
+      if (hasCar) {
+        map.addLayer({
+          id: 'carreau200-fill',
+          type: 'fill',
+          source: 'carreau200',
+          'source-layer': CAR_LAYER,
+          paint: {
+            'fill-color': '#96C8A6',
+            'fill-opacity': 0.6,
+            'fill-antialias': true
+          },
+          layout: { visibility: 'none' }
+        // Segments go above transport/roads but under labels
+        }, beforeSymbolsId);
 
-      map.addLayer({
-        id: 'carreau200-outline',
-        type: 'line',
-        source: 'carreau200',
-        'source-layer': CAR_LAYER,
-        paint: {
-          'line-color': '#666',
-          'line-width': 0.3,
-          'line-opacity': 0.5
-        },
-        layout: { visibility: 'none' }
-  }, beforePolygonsId);
+        map.addLayer({
+          id: 'carreau200-outline',
+          type: 'line',
+          source: 'carreau200',
+          'source-layer': CAR_LAYER,
+          paint: {
+            'line-color': '#666',
+            'line-width': 0.3,
+            'line-opacity': 0.5
+          },
+          layout: { visibility: 'none' }
+        }, beforePolygonsId);
+      }
 
       map.addLayer({
         id: 'segments-layer',
@@ -552,7 +556,10 @@ export function Map({ selectedAttribute, selectedClass, attributeData, mode, sca
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
-    const vis = (id: string, v: boolean) => map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+    const vis = (id: string, v: boolean) => {
+      if (!map.getLayer(id)) return;
+      map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+    };
 
     const isSegment = scale === 'segment';
     vis('segments-layer', isSegment);
