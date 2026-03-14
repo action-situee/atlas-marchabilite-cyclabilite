@@ -7,7 +7,15 @@ import { ScaleToggle } from './components/ScaleToggle';
 import { TerritoryToggle } from './components/TerritoryToggle';
 import { Info } from 'lucide-react';
 import type { DistributionData } from './components/DistributionChart';
-import { buildEmptyScores, MODE_CONFIGS, type AnalysisTerritory, type AtlasMode, type AtlasScale } from './config/modes';
+import {
+  buildEmptyScores,
+  MODE_CONFIGS,
+  type AnalysisTerritory,
+  type AtlasDebugParams,
+  type AtlasMode,
+  type AtlasScale,
+  type AtlasScores
+} from './config/modes';
 
 const SITUATED_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
 
@@ -47,6 +55,14 @@ const getModeFromLocation = (location: Location): AtlasMode => {
 
 const buildModeUrl = (mode: AtlasMode, search = window.location.search) => `/${search}${MODE_HASHES[mode]}`;
 
+const calculateGlobalScore = (data: AtlasScores) => {
+  const classes = Object.values(data);
+  if (classes.length === 0) return 0;
+
+  const total = classes.reduce((sum, classInfo) => sum + classInfo.average, 0);
+  return total / classes.length;
+};
+
 export default function App() {
   const [selectedAttribute, setSelectedAttribute] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
@@ -54,12 +70,12 @@ export default function App() {
   const [mode, setMode] = useState<AtlasMode>(() => getModeFromLocation(window.location));
   const [territory, setTerritory] = useState<AnalysisTerritory>('cantonGeneve');
   const [scale, setScale] = useState<AtlasScale>(DEFAULT_SCALE);
-  const [attributeData, setAttributeData] = useState(() => buildEmptyScores(getModeFromLocation(window.location)));
+  const [attributeData, setAttributeData] = useState<AtlasScores>(() => buildEmptyScores(getModeFromLocation(window.location)));
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [showDistribution, setShowDistribution] = useState(false);
   const [distributionData, setDistributionData] = useState<DistributionData | null>(null);
   const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('quantile');
-  const [debugParams, setDebugParams] = useState<{ attr: string; layerId: string; thresholds: number[] } | null>(null);
+  const [debugParams, setDebugParams] = useState<AtlasDebugParams | null>(null);
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
   const env = import.meta.env as Record<string, string | undefined>;
@@ -82,15 +98,6 @@ export default function App() {
   };
   const hasCarreau200 = hasSource(modeConfig.sources.carreau200);
   const hasZoneTrafic = hasSource(modeConfig.sources.zoneTrafic);
-
-  // Calculer le score global
-  const calculateGlobalScore = (data: any) => {
-    const classes = Object.values(data) as Array<{ average?: number }>;
-    if (classes.length === 0) return 0;
-
-    const total = classes.reduce((sum, classInfo) => sum + (classInfo.average || 0), 0);
-    return total / classes.length;
-  };
 
   const globalScore = calculateGlobalScore(attributeData);
 
@@ -260,7 +267,6 @@ export default function App() {
       <Map
         selectedAttribute={selectedAttribute}
         selectedClass={selectedClass}
-        attributeData={attributeData}
         mode={mode}
         territory={territory}
         scale={scale}

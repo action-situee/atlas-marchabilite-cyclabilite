@@ -4,10 +4,17 @@ import { ChevronRight } from 'lucide-react';
 import { SpiderChart } from './SpiderChart';
 import { useState } from 'react';
 import { DistributionChart, type DistributionData } from './DistributionChart';
-import { MODE_CONFIGS, type AtlasMode, type AtlasScale } from '../config/modes';
+import {
+  MODE_CONFIGS,
+  type AtlasClassScore,
+  type AtlasDebugParams,
+  type AtlasMode,
+  type AtlasScale,
+  type AtlasScores
+} from '../config/modes';
 
 interface AttributePanelProps {
-  attributeData: any;
+  attributeData: AtlasScores;
   selectedAttribute: string | null;
   selectedClass: string | null;
   onSelectClass: (className: string) => void;
@@ -21,7 +28,7 @@ interface AttributePanelProps {
   distributionData: DistributionData | null;
   colorMode: 'linear' | 'quantile';
   mode: AtlasMode;
-  debugParams?: { attr: string; layerId: string; thresholds: number[] };
+  debugParams?: AtlasDebugParams;
   onColorModeChange?: (mode: 'linear' | 'quantile') => void;
 }
 
@@ -48,8 +55,11 @@ export function AttributePanel({
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
   const orderedClasses = modeConfig.classOrder
-    .map((className) => [className, attributeData[className]] as [string, any])
-    .filter(([, classInfo]) => Boolean(classInfo));
+    .map((className) => {
+      const classInfo = attributeData[className];
+      return classInfo ? ([className, classInfo] as const) : null;
+    })
+    .filter((entry): entry is readonly [string, AtlasClassScore] => entry !== null);
   
   return (
     <div className="absolute right-0 top-0 bottom-0 z-20 w-[300px] pointer-events-none">
@@ -75,12 +85,7 @@ export function AttributePanel({
               </div>
               {hasSelection && (
                 <button
-                  onClick={() => {
-                    // Clear app selection
-                    onReset();
-                    // Also clear map-locked selection
-                    window.dispatchEvent(new Event('map-clear-selection'));
-                  }}
+                  onClick={onReset}
                   className="text-[10px] uppercase tracking-wider transition-colors font-medium"
                   style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}
                 >
@@ -89,7 +94,7 @@ export function AttributePanel({
               )}
             </div>
             
-            {orderedClasses.map(([className, classInfo]: [string, any]) => {
+            {orderedClasses.map(([className, classInfo]) => {
               const isClassSelected = selectedClass === className;
               const isOtherSelected = hasSelection && !isClassSelected && !selectedAttribute?.startsWith(className + '.');
               
@@ -168,7 +173,7 @@ export function AttributePanel({
                         className="overflow-hidden"
                       >
                         <div className="p-2 space-y-1.5" style={{ backgroundColor: theme.panelBackground }}>
-                          {classInfo.attributes.map((attr: any, index: number) => {
+                          {classInfo.attributes.map((attr, index: number) => {
                             const attrKey = `${className}.${attr.technicalName}`;
                             const isAttrSelected = selectedAttribute === attrKey;
                             const isOtherAttrSelected = hasSelection && !isAttrSelected;

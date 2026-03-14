@@ -7,6 +7,10 @@ export interface AtlasAttributeDefinition {
   technicalName: string;
 }
 
+export interface AtlasAttributeScore extends AtlasAttributeDefinition {
+  value: number;
+}
+
 export interface AtlasClassDefinition {
   displayName: string;
   color: string;
@@ -14,6 +18,22 @@ export interface AtlasClassDefinition {
   favorable: boolean;
   field: string;
   attributes: AtlasAttributeDefinition[];
+}
+
+export interface AtlasClassScore {
+  color: string;
+  favorable: boolean;
+  description: string;
+  average: number;
+  attributes: AtlasAttributeScore[];
+}
+
+export type AtlasScores = Record<string, AtlasClassScore>;
+
+export interface AtlasDebugParams {
+  attr: string;
+  layerId: string;
+  thresholds: number[];
 }
 
 export interface AtlasModeTheme {
@@ -327,7 +347,7 @@ export const MODE_CONFIGS: Record<AtlasMode, AtlasModeConfig> = {
   }
 };
 
-export function buildEmptyScores(mode: AtlasMode) {
+export function buildEmptyScores(mode: AtlasMode): AtlasScores {
   const config = MODE_CONFIGS[mode];
   return Object.fromEntries(
     config.classes.map((classDef) => [

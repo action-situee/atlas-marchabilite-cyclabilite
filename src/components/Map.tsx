@@ -6,7 +6,16 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
 import type { DistributionData } from './DistributionChart';
 import { computeStats, type DataStats } from '../utils/normalize';
-import { MODE_CONFIGS, getAttributeKeys, getClassFieldMap, type AnalysisTerritory, type AtlasMode, type AtlasScale } from '../config/modes';
+import {
+  MODE_CONFIGS,
+  getAttributeKeys,
+  getClassFieldMap,
+  type AnalysisTerritory,
+  type AtlasDebugParams,
+  type AtlasMode,
+  type AtlasScale,
+  type AtlasScores
+} from '../config/modes';
 
 type BasemapMode = 'voyager' | 'swissLight' | 'swissImagery' | 'none';
 type CameraState = {
@@ -15,6 +24,13 @@ type CameraState = {
   bearing: number;
   pitch: number;
 };
+
+interface HoveredAtlasFeature {
+  id: unknown;
+  properties: Record<string, unknown>;
+  geometry: unknown;
+  scores: AtlasScores;
+}
 
 const ANALYSIS_BOUNDS: [[number, number], [number, number]] = [
   [5.600526, 45.857307],
@@ -42,22 +58,20 @@ const WATER_LAYER_PATTERN = /water|lake|ocean|river|canal|stream|reservoir/i;
 interface MapProps {
   selectedAttribute: string | null;
   selectedClass: string | null;
-  attributeData: any;
   mode: AtlasMode;
   territory: AnalysisTerritory;
   scale: AtlasScale;
   colorMode: 'linear' | 'quantile';
-  onHoverSegment: (segment: any) => void;
+  onHoverSegment: (segment: HoveredAtlasFeature | null) => void;
   onResetScaleToDefault?: () => void;
   onDistributionRequest?: (data: DistributionData | null) => void;
-  onDebugParamsChange?: (params: { attr: string; layerId: string; thresholds: number[] }) => void;
+  onDebugParamsChange?: (params: AtlasDebugParams) => void;
   onStatsUpdate?: (stats: Record<string, DataStats>) => void;
 }
 
 export function Map({
   selectedAttribute,
   selectedClass,
-  attributeData,
   mode,
   territory,
   scale,
@@ -361,21 +375,35 @@ export function Map({
   };
 
   const setPerimeterVisibility = (map: any, visible: boolean) => {
-    const visibility = visible ? 'visible' : 'none';
-    for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', visibility);
-      }
+    if (map.getLayer('perimeter-casing')) {
+      map.setPaintProperty('perimeter-casing', 'line-opacity', visible ? 0 : 0);
     }
+    if (map.getLayer('perimeter-outline')) {
+      map.setPaintProperty(
+        'perimeter-outline',
+        'line-opacity',
+        visible ? ['interpolate', ['linear'], ['zoom'], 8, 0.18, 10, 0.32, 12, 0.62, 14, 0.92] : 0
+      );
+    }
+    map.triggerRepaint();
   };
 
   const currentScale = () => scaleRef.current;
 
-  const getAnalyticsLayerId = () => {
-    const activeScale = currentScale();
-    if (activeScale === 'carreau200') return 'carreau200-fill';
-    if (activeScale === 'zoneTrafic') return 'zones-fill';
+  const getSourceIdForScale = (nextScale: AtlasScale = currentScale()) => {
+    if (nextScale === 'carreau200') return 'carreau200';
+    if (nextScale === 'zoneTrafic') return 'zones_trafic';
+    return 'segments';
+  };
+
+  const getLayerIdForScale = (nextScale: AtlasScale = currentScale()) => {
+    if (nextScale === 'carreau200') return 'carreau200-fill';
+    if (nextScale === 'zoneTrafic') return 'zones-fill';
     return 'segments-layer';
+  };
+
+  const getAnalyticsLayerId = () => {
+    return getLayerIdForScale(currentScale());
   };
 
   const applyAnalysisConstraints = (map: any) => {
@@ -427,11 +455,10 @@ export function Map({
   };
 
   const getTrackedSourceIds = (currentMode: AtlasMode = mode, currentTerritory: AnalysisTerritory = territory) => {
-    const sourceIds = ['segments'];
-    if (resolveSource('carreau200', currentMode, currentTerritory).url) sourceIds.push('carreau200');
-    if (resolveSource('zoneTrafic', currentMode, currentTerritory).url) sourceIds.push('zones_trafic');
-    if (resolvePerimeterSource().url) sourceIds.push('perimeter');
-    return sourceIds;
+    const activeScale = currentScale();
+    const activeSourceUrl = resolveSource(activeScale, currentMode, currentTerritory).url;
+    if (!activeSourceUrl) return ['segments'];
+    return [getSourceIdForScale(activeScale)];
   };
 
   const removeAtlasLayersAndSources = (map: any) => {
@@ -622,7 +649,7 @@ export function Map({
           'line-width': 1,
           'line-opacity': 0
         },
-        layout: { visibility: showPerimeterRef.current ? 'visible' : 'none' }
+        layout: { visibility: 'visible' }
       });
     }
 
@@ -636,10 +663,10 @@ export function Map({
           'line-color': '#000000',
           'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 10, 1.8, 12, 2.4, 14, 3],
           'line-dasharray': [0, 2.2],
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.18, 10, 0.32, 12, 0.62, 14, 0.92]
+          'line-opacity': showPerimeterRef.current ? ['interpolate', ['linear'], ['zoom'], 8, 0.18, 10, 0.32, 12, 0.62, 14, 0.92] : 0
         },
         layout: {
-          visibility: showPerimeterRef.current ? 'visible' : 'none',
+          visibility: 'visible',
           'line-cap': 'round',
           'line-join': 'round'
         }
@@ -1134,9 +1161,8 @@ export function Map({
       map.setPaintProperty('zones-fill', 'fill-color', ramp as any);
     }
     if (onDebugParamsChange) {
-      const layerId = scale === 'segment' ? 'segments-layer' : scale === 'carreau200' ? 'carreau200-fill' : 'zones-fill';
       const thresholds = colorMode === 'linear' ? VALUE_THRESHOLDS : thresholdsOverride && thresholdsOverride.length ? thresholdsOverride : quantileThresholds;
-      onDebugParamsChange({ attr, layerId, thresholds });
+      onDebugParamsChange({ attr, layerId: getLayerIdForScale(scale), thresholds });
     }
   }
 
@@ -1148,11 +1174,7 @@ export function Map({
     if (!mapRef.current || !mapLoaded) return null;
     const map = mapRef.current;
     const attr = attrOverride || activeAttribute();
-
-    let layerId: string;
-    if (scale === 'segment') layerId = 'segments-layer';
-    else if (scale === 'carreau200') layerId = 'carreau200-fill';
-    else layerId = 'zones-fill';
+    const layerId = getLayerIdForScale(scale);
     if (!map.getLayer(layerId)) return null;
 
     const features = map.queryRenderedFeatures(undefined, {
@@ -1217,6 +1239,14 @@ export function Map({
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     setPerimeterVisibility(mapRef.current, showPerimeter);
+    if (showPerimeter) {
+      for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
+        if (mapRef.current.getLayer(layerId)) {
+          mapRef.current.moveLayer(layerId);
+        }
+      }
+      moveLabelLayersToTop(mapRef.current);
+    }
   }, [mapLoaded, showPerimeter]);
 
   // Update layer visibility based on scale
@@ -1224,6 +1254,86 @@ export function Map({
     if (!mapLoaded || !mapRef.current) return;
     setScaleVisibility(mapRef.current, scale);
   }, [mapLoaded, scale, mode, attributeStats]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    if (!initialAnalyticsDoneRef.current) return;
+    if (lastModeRef.current !== mode || lastTerritoryRef.current !== territory) return;
+
+    const map = mapRef.current;
+    const sourceId = getSourceIdForScale(scale);
+    const layerId = getLayerIdForScale(scale);
+    const scaleLabel = scale === 'segment' ? 'Rue' : scale === 'carreau200' ? 'Quartier' : 'Secteur';
+    const isSourceLoaded = () => {
+      if (!map.getSource(sourceId)) return false;
+      try {
+        return map.isSourceLoaded(sourceId);
+      } catch {
+        return false;
+      }
+    };
+
+    setScaleVisibility(map, scale);
+    if (!map.getSource(sourceId) || isSourceLoaded()) return;
+
+    const requestId = ++loadRequestRef.current;
+    clearLoadingArtifacts();
+    setLoadingStage('tiles');
+    setLoadingDetail(`Chargement ${scaleLabel}`);
+    setLoadingProgress(16);
+    setIsLoading(true);
+
+    const updateScaleProgress = () => {
+      if (loadRequestRef.current !== requestId) return false;
+      const loaded = isSourceLoaded();
+      setLoadingStage('tiles');
+      setLoadingDetail(`${scaleLabel} · ${loaded ? 'source prête' : 'réception des tuiles'}`);
+      setLoadingProgress((previous) => Math.max(previous, loaded ? 84 : 28));
+      return loaded;
+    };
+
+    const finishScaleLoading = () => {
+      if (loadRequestRef.current !== requestId) return;
+      if (!map.getLayer(layerId) || !isSourceLoaded() || !map.areTilesLoaded()) return;
+
+      const attr = activeAttribute();
+      const thresholds = colorMode === 'quantile' ? quantileMap[attr] || VALUE_THRESHOLDS : undefined;
+      applyRamp(attr, thresholds);
+      distributionRequestRef.current?.(
+        computeDistribution(attr, colorMode === 'quantile' ? quantileMap[attr] || VALUE_THRESHOLDS : VALUE_THRESHOLDS)
+      );
+      finishLoading(requestId, `${scaleLabel} prêt`);
+    };
+
+    const handleSourceLoading = (event: any) => {
+      if (String(event.sourceId || '') !== sourceId) return;
+      updateScaleProgress();
+    };
+
+    const handleSourceData = (event: any) => {
+      if (String(event.sourceId || '') !== sourceId) return;
+      updateScaleProgress();
+      finishScaleLoading();
+    };
+
+    const handleIdle = () => {
+      updateScaleProgress();
+      finishScaleLoading();
+    };
+
+    map.on('sourcedataloading', handleSourceLoading);
+    map.on('sourcedata', handleSourceData);
+    map.on('idle', handleIdle);
+
+    loadingCleanupRef.current = () => {
+      map.off('sourcedataloading', handleSourceLoading);
+      map.off('sourcedata', handleSourceData);
+      map.off('idle', handleIdle);
+    };
+
+    updateScaleProgress();
+    requestAnimationFrame(handleIdle);
+  }, [mapLoaded, scale, mode, territory, colorMode, quantileMap]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -1267,7 +1377,7 @@ export function Map({
     };
   }, [mapLoaded, scale, colorMode, selectedAttribute, selectedClass, mode, quantileMap]);
 
-  function buildScoresFromProperties(props: any) {
+  function buildScoresFromProperties(props: Record<string, unknown>): AtlasScores {
     const normalizeValue = (rawValue: unknown, attrName: string): number => {
       const value = toNumeric(rawValue);
       if (value === null) return 0;
@@ -1319,7 +1429,7 @@ export function Map({
       const features = map.queryRenderedFeatures(event.point, { layers: [layerId] });
       const feature = features[0];
       if (feature && feature.properties) {
-        const scores = buildScoresFromProperties(feature.properties);
+        const scores = buildScoresFromProperties(feature.properties as Record<string, unknown>);
         hoverSegmentRef.current({ id: feature.id, properties: feature.properties, geometry: feature.geometry, scores });
         map.getCanvas().style.cursor = 'pointer';
       } else {

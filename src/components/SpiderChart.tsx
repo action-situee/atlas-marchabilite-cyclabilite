@@ -1,8 +1,8 @@
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
-import { getModeTheme, type AtlasMode } from '../config/modes';
+import { getModeTheme, type AtlasMode, type AtlasScores } from '../config/modes';
 
 interface SpiderChartProps {
-  attributeData: any;
+  attributeData: AtlasScores;
   mode: AtlasMode;
   classOrder: string[];
 }
@@ -10,7 +10,7 @@ interface SpiderChartProps {
 export function SpiderChart({ attributeData, mode, classOrder }: SpiderChartProps) {
   const theme = getModeTheme(mode);
   const data = classOrder.map((className) => {
-    const classInfo = (attributeData as any)[className] || { average: 0, color: '#ccc' };
+    const classInfo = attributeData[className] || { average: 0, color: '#ccc' };
     return {
       subject: className,
       value: classInfo.average || 0,
