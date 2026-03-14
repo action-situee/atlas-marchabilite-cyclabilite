@@ -2,7 +2,7 @@
 
 # Change this if your existing Cloudflare Pages project uses a different slug.
 name = "atlas-marchabilite-cyclabilite"
-pages_build_output_dir = "./dist"
+pages_build_output_dir = "./build"
 compatibility_date = "2026-03-14"
 
 [vars]
