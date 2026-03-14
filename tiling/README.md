@@ -18,8 +18,23 @@ This repo ships a simple, reproducible pipeline to turn raw Parquet into perform
 
 ## Input
 
-Place your raw data in `data_raw/`. Current default expects:
-- `data_raw/step3_index.parquet` (LineString/Polygon network with attributes)
+Place your raw data in `data_raw/`. Current defaults expect:
+- Walkability:
+  - `data_raw/walkability/AggloGG/step3_index.parquet`
+  - `data_raw/walkability/AggloGG/step3_aggregated_index_carreau200.parquet`
+  - `data_raw/walkability/AggloGG/step3_aggregated_index_girec.parquet`
+  - `data_raw/walkability/CantonGE/step3_index.parquet`
+  - `data_raw/walkability/CantonGE/step3_aggregated_index_carreau200.parquet`
+  - `data_raw/walkability/CantonGE/step3_aggregated_index_girec.parquet`
+- Bikeability:
+  - `data_raw/cyclability/AggloGG/step3_index.parquet`
+  - `data_raw/cyclability/AggloGG/step3_aggregated_index_carreau200.parquet`
+  - `data_raw/cyclability/AggloGG/step3_aggregated_index_gg_infra_communal.parquet`
+  - `data_raw/cyclability/CantonGE/step3_index.parquet`
+  - `data_raw/cyclability/CantonGE/step3_aggregated_index_carreau200.parquet`
+  - `data_raw/cyclability/CantonGE/step3_aggregated_index_gg_infra_communal.parquet`
+
+Legacy root-level walkability files in `data_raw/` are still accepted as fallback.
 
 You can add more datasets later; see notes below.
 
@@ -32,10 +47,34 @@ npm run tile
 ```
 
 This will generate:
-- `data_tiles/step3_index.mbtiles` (intermediate)
-- `public/tiles/step3_index.pmtiles` (final)
+- Walkability:
+  - `data_tiles/walk_agglo_segment.mbtiles`
+  - `data_tiles/walk_agglo_carreau200.mbtiles`
+  - `data_tiles/walk_agglo_infracommunal.mbtiles`
+  - `data_tiles/walk_canton_segment.mbtiles`
+  - `data_tiles/walk_canton_carreau200.mbtiles`
+  - `data_tiles/walk_canton_infracommunal.mbtiles`
+  - `public/tiles/walk_agglo_segment.pmtiles`
+  - `public/tiles/walk_agglo_carreau200.pmtiles`
+  - `public/tiles/walk_agglo_infracommunal.pmtiles`
+  - `public/tiles/walk_canton_segment.pmtiles`
+  - `public/tiles/walk_canton_carreau200.pmtiles`
+  - `public/tiles/walk_canton_infracommunal.pmtiles`
+- Bikeability:
+  - `data_tiles/bike_agglo_segment.mbtiles`
+  - `data_tiles/bike_agglo_carreau200.mbtiles`
+  - `data_tiles/bike_agglo_infracommunal.mbtiles`
+  - `data_tiles/bike_canton_segment.mbtiles`
+  - `data_tiles/bike_canton_carreau200.mbtiles`
+  - `data_tiles/bike_canton_infracommunal.mbtiles`
+  - `public/tiles/bike_agglo_segment.pmtiles`
+  - `public/tiles/bike_agglo_carreau200.pmtiles`
+  - `public/tiles/bike_agglo_infracommunal.pmtiles`
+  - `public/tiles/bike_canton_segment.pmtiles`
+  - `public/tiles/bike_canton_carreau200.pmtiles`
+  - `public/tiles/bike_canton_infracommunal.pmtiles`
 
-The app will automatically use `public/tiles/step3_index.pmtiles` during `npm run dev` and after build.
+The app will automatically use `public/tiles/walk_agglo_segment.pmtiles` during `npm run dev` and after build.
 
 - Docker alternative (no host installs):
 
@@ -61,7 +100,7 @@ npm run martin
 ```
 
 This runs Martin on http://localhost:3000 and serves
-- TileJSON: http://localhost:3000/step3_index
+- TileJSON: http://localhost:3000/walk_agglo_segment
 
 You can then switch the app by setting a `.env` (see below) to point to the TileJSON.
 
@@ -70,20 +109,24 @@ You can then switch the app by setting a `.env` (see below) to point to the Tile
 Two modes are supported; the app tries PMTiles first if present.
 
 - PMTiles (static):
-  - Default URL: `/tiles/step3_index.pmtiles`
-  - Env: `VITE_PM_TILES_URL=/tiles/step3_index.pmtiles`
+  - Walkability default URL: `/tiles/walk_agglo_segment.pmtiles`
+  - Bikeability default URL: `/tiles/bike_agglo_segment.pmtiles`
+  - Env: `VITE_PM_TILES_URL=/tiles/walk_agglo_segment.pmtiles`
+  - Env: `VITE_PM_TILES_BIKE_SEGMENT=/tiles/bike_agglo_segment.pmtiles`
 
 - Martin (TileJSON):
-  - Env: `VITE_TILEJSON_WALKNET=http://localhost:3000/step3_index`
+  - Walkability env: `VITE_TILEJSON_WALKNET=http://localhost:3000/walk_agglo_segment`
+  - Bikeability env: `VITE_TILEJSON_BIKE_SEGMENT=http://localhost:3000/bike_agglo_segment`
 
 Common:
-- `VITE_WALK_SOURCE_LAYER=walknet` (layer name used by tippecanoe)
+- `VITE_WALK_SOURCE_LAYER=walknet`
+- `VITE_BIKE_SOURCE_LAYER=bikenet`
 
 Create `.env.local` (not committed) in project root to override.
 
 ## Update flow (day-to-day)
 
-1) Drop new parquet in `data_raw/step3_index.parquet`
+1) Drop new parquet in `data_raw/walkability/` and/or `data_raw/cyclability/`
 2) `npm run tile`
 3) `npm run dev` to check locally
 4) Commit/push app changes (tiles are large—prefer hosting `.pmtiles` outside git; see Deploy)
@@ -94,10 +137,10 @@ Create `.env.local` (not committed) in project root to override.
 - Cloudflare R2 for hosting large `.pmtiles` files (public bucket) OR keep small `.pmtiles` in `public/tiles/`
 
 Set in `.env.production` (for direct PMTiles):
-- `VITE_PM_TILES_URL=https://<your-r2-public-domain>/step3_index.pmtiles`
+- `VITE_PM_TILES_URL=https://<your-r2-public-domain>/walk_agglo_segment.pmtiles`
 
 …or for Martin on a server (less common for Pages-only):
-- `VITE_TILEJSON_WALKNET=https://tiles.yourdomain/step3_index`
+- `VITE_TILEJSON_WALKNET=https://tiles.yourdomain/walk_agglo_segment`
 
 See root README for detailed steps and optional GitHub Actions workflow.
 

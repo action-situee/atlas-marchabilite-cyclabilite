@@ -1,73 +1,88 @@
+import { getModeTheme, type AtlasMode, type AtlasScale } from '../config/modes';
 import { Grid3x3, Square, Map } from 'lucide-react';
 
 interface ScaleToggleProps {
-  scale: 'segment' | 'carreau200' | 'zoneTrafic';
-  onScaleChange: (scale: 'segment' | 'carreau200' | 'zoneTrafic') => void;
+  mode: AtlasMode;
+  scale: AtlasScale;
+  onScaleChange: (scale: AtlasScale) => void;
   availableCarreau200?: boolean;
   availableZoneTrafic?: boolean;
 }
 
 export function ScaleToggle({
+  mode,
   scale,
   onScaleChange,
   availableCarreau200 = true,
   availableZoneTrafic = true
 }: ScaleToggleProps) {
+  const theme = getModeTheme(mode);
+  const zoneLabel = 'Infra-communal';
+  const zoneTitle = mode === 'bikeability'
+    ? 'Infra-communal - Grand Genève'
+    : 'Infra-communal - données GIREC';
+
   return (
-    <div className="bg-white rounded-full flex border border-[#D8D2CA] overflow-hidden">
+    <div className="bg-white rounded-full flex overflow-hidden" style={{ border: `1px solid ${theme.accentBorder}` }}>
       <button
         onClick={() => onScaleChange('segment')}
         className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'segment'
-            ? 'bg-[#D35941] text-white'
+            ? 'text-white'
             : 'text-[#5A5A5A] hover:text-[#1A1A1A]'
         }`}
-        style={{ fontFamily: 'Arial, sans-serif' }}
+        style={scale === 'segment' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title="Segment - Tronçon de rue"
       >
         <Grid3x3 className="w-3.5 h-3.5" />
         <span>Segment</span>
       </button>
-      <div className="w-px bg-[#D8D2CA]" />
+      <div className="w-px" style={{ backgroundColor: theme.accentBorder }} />
       <button
         onClick={() => onScaleChange('carreau200')}
         disabled={!availableCarreau200}
         className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'carreau200'
-            ? 'bg-[#D35941] text-white'
+            ? 'text-white'
             : availableCarreau200
               ? 'text-[#5A5A5A] hover:text-[#1A1A1A]'
               : 'text-[#A0A0A0] cursor-not-allowed'
         }`}
-        style={{ fontFamily: 'Arial, sans-serif' }}
+        style={scale === 'carreau200' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title={availableCarreau200 ? 'Carreau 200m - Grille statistique' : 'Carreau 200m - données indisponibles'}
       >
         <Square className="w-3.5 h-3.5" />
         <span>Carreau 200</span>
         {!availableCarreau200 && (
-          <span className="ml-1 rounded-full bg-[#EEE6DE] px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-[#8A2E23]">
+          <span
+            className="ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
+            style={{ backgroundColor: theme.accentLight, color: theme.accentDark }}
+          >
             Données manquantes
           </span>
         )}
       </button>
-      <div className="w-px bg-[#D8D2CA]" />
+      <div className="w-px" style={{ backgroundColor: theme.accentBorder }} />
       <button
         onClick={() => onScaleChange('zoneTrafic')}
         disabled={!availableZoneTrafic}
         className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'zoneTrafic'
-            ? 'bg-[#D35941] text-white'
+            ? 'text-white'
             : availableZoneTrafic
               ? 'text-[#5A5A5A] hover:text-[#1A1A1A]'
               : 'text-[#A0A0A0] cursor-not-allowed'
         }`}
-        style={{ fontFamily: 'Arial, sans-serif' }}
-        title={availableZoneTrafic ? 'Zone de trafic - Quartiers fonctionnels' : 'Zone de trafic - données indisponibles'}
+        style={scale === 'zoneTrafic' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
+        title={availableZoneTrafic ? zoneTitle : `${zoneLabel} - données indisponibles`}
       >
         <Map className="w-3.5 h-3.5" />
-        <span>Zone trafic</span>
+        <span>{zoneLabel}</span>
         {!availableZoneTrafic && (
-          <span className="ml-1 rounded-full bg-[#EEE6DE] px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-[#8A2E23]">
+          <span
+            className="ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
+            style={{ backgroundColor: theme.accentLight, color: theme.accentDark }}
+          >
             Données manquantes
           </span>
         )}

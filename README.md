@@ -7,14 +7,19 @@
 
   - Install dependencies:
     - `npm i`
-  - Put your raw parquet in `data_raw/step3_index.parquet`
+  - Put your walkability parquet in `data_raw/walkability/AggloGG/` and `data_raw/walkability/CantonGE/`
+  - Put your bikeability parquet in `data_raw/cyclability/AggloGG/` and `data_raw/cyclability/CantonGE/`
   - Build tiles:
     - Native toolchain: `npm run tile`
     - Or Docker toolchain: `bash ./tiling/make_tiles_docker.sh`
   - Run the app: `npm run dev` (http://localhost:5173)
   - Tiles server (TileJSON) required: `npm run martin` (http://localhost:3000)
 
-  By default the app reads `public/tiles/step3_index.pmtiles`. You can switch to Martin (TileJSON) by setting `VITE_TILEJSON_WALKNET`.
+  By default the app reads:
+  - walkability: `public/tiles/walk_agglo_segment.pmtiles`
+  - bikeability: `public/tiles/bike_agglo_segment.pmtiles`
+
+  You can switch to Martin (TileJSON) via the mode-specific env vars documented below.
 
   ## Data → Tiles pipeline
 
@@ -32,9 +37,12 @@
     ```sh
     rm -rf data_tiles/* public/tiles/*.pmtiles
     ```
-  - Make sure your new raw file is here:
+  - Make sure your raw files are in the current folder structure:
     ```
-    data_raw/step3_index.parquet
+    data_raw/walkability/AggloGG/
+    data_raw/walkability/CantonGE/
+    data_raw/cyclability/AggloGG/
+    data_raw/cyclability/CantonGE/
     ```
   - Rebuild tiles (choose ONE):
     - Native:
@@ -45,7 +53,20 @@
       ```sh
       bash ./tiling/make_tiles_docker.sh
       ```
-  - Verify `public/tiles/step3_index.pmtiles` was created.
+  - Verify these files were created:
+    - `public/tiles/walk_agglo_segment.pmtiles`
+    - `public/tiles/walk_agglo_carreau200.pmtiles`
+    - `public/tiles/walk_agglo_infracommunal.pmtiles`
+    - `public/tiles/walk_canton_segment.pmtiles`
+    - `public/tiles/walk_canton_carreau200.pmtiles`
+    - `public/tiles/walk_canton_infracommunal.pmtiles`
+    - `public/tiles/bike_agglo_segment.pmtiles`
+    - `public/tiles/bike_agglo_carreau200.pmtiles`
+    - `public/tiles/bike_agglo_infracommunal.pmtiles`
+    - `public/tiles/bike_canton_segment.pmtiles`
+    - `public/tiles/bike_canton_carreau200.pmtiles`
+    - `public/tiles/bike_canton_infracommunal.pmtiles`
+    - `public/tiles/canton_perimeter.pmtiles`
   - Start the app locally:
     ```sh
     npm run dev
@@ -66,23 +87,29 @@
     ```
     Then set in `.env.local`:
     ```sh
-    VITE_TILEJSON_WALKNET=http://localhost:3001/step3_index
+    VITE_TILEJSON_WALKNET=http://localhost:3001/walk_agglo_segment
     VITE_WALK_SOURCE_LAYER=walknet
-    ```
+  ```
 
-  ### Switching between PMTiles and Martin
+### Switching between PMTiles and Martin
 
-  - PMTiles (default): ensure `public/tiles/step3_index.pmtiles` exists or set `VITE_PM_TILES_URL` to an external PMTiles URL
-  - Martin (TileJSON): set `VITE_TILEJSON_WALKNET=http://localhost:3000/step3_index` (or your server URL) and ensure `VITE_WALK_SOURCE_LAYER=walknet`
+  - PMTiles (walkability): ensure `public/tiles/walk_agglo_segment.pmtiles` exists or set `VITE_PM_TILES_URL` / `VITE_PM_TILES_WALK_SEGMENT`
+  - PMTiles (bikeability): ensure `public/tiles/bike_agglo_segment.pmtiles` exists or set `VITE_PM_TILES_BIKE_SEGMENT`
+  - Martin (walkability): set `VITE_TILEJSON_WALKNET=http://localhost:3000/walk_agglo_segment` and `VITE_WALK_SOURCE_LAYER=walknet`
+  - Martin (bikeability): set `VITE_TILEJSON_BIKE_SEGMENT=http://localhost:3000/bike_agglo_segment` and `VITE_BIKE_SOURCE_LAYER=bikenet`
 
   Create a `.env.local` in repo root to override these during development.
 
   ## Configuration
 
   - Create `.env.local` for local overrides (not committed)
-  - PMTiles (static): `VITE_PM_TILES_URL=/tiles/step3_index.pmtiles` or your R2 URL
-  - Martin (TileJSON): `VITE_TILEJSON_WALKNET=http://localhost:3000/step3_index`
-  - Layer name expected by the app: `VITE_WALK_SOURCE_LAYER=walknet`
+  - PMTiles walkability: `VITE_PM_TILES_URL=/tiles/walk_agglo_segment.pmtiles`
+  - PMTiles bikeability: `VITE_PM_TILES_BIKE_SEGMENT=/tiles/bike_agglo_segment.pmtiles`
+  - PMTiles perimeter overlay: `VITE_PM_TILES_PERIMETER=/tiles/canton_perimeter.pmtiles`
+  - Martin walkability: `VITE_TILEJSON_WALKNET=http://localhost:3000/walk_agglo_segment`
+  - Martin bikeability: `VITE_TILEJSON_BIKE_SEGMENT=http://localhost:3000/bike_agglo_segment`
+  - Martin perimeter overlay: `VITE_TILEJSON_PERIMETER=http://localhost:3000/canton_perimeter`
+  - Layer names expected by the app: `VITE_WALK_SOURCE_LAYER=walknet`, `VITE_BIKE_SOURCE_LAYER=bikenet`
 
   ## Deploy on Cloudflare
 
@@ -91,7 +118,7 @@
   - Cloudflare R2 for the `.pmtiles` (public bucket)
 
   Steps:
-  1) Upload your `step3_index.pmtiles` to R2 (public)
+  1) Upload your `walk_agglo_segment.pmtiles` to R2 (public)
   2) In Cloudflare Pages Project → Environment Variables, set `VITE_PM_TILES_URL` to your R2 public URL
   3) Each push to `master` (or your chosen branch) will build and deploy
 
@@ -111,7 +138,7 @@
   ### Troubleshooting
 
   - If the app shows mismatched colors or attributes after data changes:
-    - Ensure `public/tiles/step3_index.pmtiles` was regenerated
+    - Ensure `public/tiles/walk_agglo_segment.pmtiles` was regenerated
     - Confirm `.env.local` points to the intended source (PMTiles vs Martin)
     - Hard reload the page (cache)
   - Tippecanoe errors: check your NDJSON schema and geometry validity

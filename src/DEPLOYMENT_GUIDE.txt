@@ -9,19 +9,27 @@
 
 A. STRUCTURE DES DONNÉES ATTENDUE
 ----------------------------------
-Vous devez avoir 3 jeux de données vector tiles (format .mbtiles ou .pmtiles) :
+Vous devez avoir 3 jeux de données vector tiles par mode et territoire (format .mbtiles ou .pmtiles) :
 
-1. segments.pmtiles (ou segments/{z}/{x}/{y}.pbf)
+1. walk_agglo_segment.pmtiles
    - Échelle : Tronçons de rue
    - Géométrie : LineString
 
-2. carreau200.pmtiles (ou carreau200/{z}/{x}/{y}.pbf)
+2. walk_agglo_carreau200.pmtiles
    - Échelle : Grille 200m
    - Géométrie : Polygon
 
-3. zoneTrafic.pmtiles (ou zoneTrafic/{z}/{x}/{y}.pbf)
-   - Échelle : Zones de trafic
+3. walk_agglo_infracommunal.pmtiles
+   - Échelle : Infra-communal
    - Géométrie : Polygon
+
+Convention recommandée :
+`mode_territoire_agregation`
+Exemples :
+- `walk_agglo_segment.pmtiles`
+- `walk_canton_infracommunal.pmtiles`
+- `bike_agglo_carreau200.pmtiles`
+- `bike_canton_segment.pmtiles`
 
 
 B. PROPRIÉTÉS REQUISES DANS CHAQUE FEATURE
@@ -83,9 +91,9 @@ OPTION 1 - PMTiles (RECOMMANDÉ pour Cloudflare)
   ✓ Pas de serveur tile nécessaire
   ✓ Range requests HTTP
 
-  Placement : /public/tiles/segments.pmtiles
-              /public/tiles/carreau200.pmtiles
-              /public/tiles/zoneTrafic.pmtiles
+  Placement : /public/tiles/walk_agglo_segment.pmtiles
+              /public/tiles/walk_agglo_carreau200.pmtiles
+              /public/tiles/walk_agglo_infracommunal.pmtiles
 
 OPTION 2 - MBTiles + serveur tile
   - Nécessite un serveur Node.js (tileserver-gl, martin, etc.)
@@ -144,7 +152,7 @@ C. DÉPLOIEMENT VIA DASHBOARD CLOUDFLARE
    
 5. Variables d'environnement (si nécessaire) :
    
-   VITE_MAPBOX_TOKEN = pk.eyJ1IjoibWFyYy1lZCIsImEiOiJjazdoeGZ5ZnAwZHRiM21tbnN5N3J3N2JtIn0.e49ygvA-P7W5FKt-nDW1FQ
+   VITE_MAPBOX_TOKEN = <your-public-mapbox-token>
 
 6. Cliquer "Save and Deploy"
 
@@ -174,14 +182,14 @@ Si vos fichiers .pmtiles sont lourds (>25MB), utilisez R2 :
    wrangler r2 bucket create atlas-tiles
 
 2. Uploader les tiles :
-   wrangler r2 object put atlas-tiles/segments.pmtiles --file=./tiles/segments.pmtiles
-   wrangler r2 object put atlas-tiles/carreau200.pmtiles --file=./tiles/carreau200.pmtiles
-   wrangler r2 object put atlas-tiles/zoneTrafic.pmtiles --file=./tiles/zoneTrafic.pmtiles
+   wrangler r2 object put atlas-tiles/walk_agglo_segment.pmtiles --file=./public/tiles/walk_agglo_segment.pmtiles
+   wrangler r2 object put atlas-tiles/walk_agglo_carreau200.pmtiles --file=./public/tiles/walk_agglo_carreau200.pmtiles
+   wrangler r2 object put atlas-tiles/walk_agglo_infracommunal.pmtiles --file=./public/tiles/walk_agglo_infracommunal.pmtiles
 
 3. Activer l'accès public :
    Dashboard → R2 → Votre bucket → Settings → Public Access → Allow
 
-4. URL d'accès : https://pub-xxxxx.r2.dev/segments.pmtiles
+4. URL d'accès : https://pub-xxxxx.r2.dev/walk_agglo_segment.pmtiles
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -212,9 +220,9 @@ CHANGEMENTS À FAIRE :
 
    // Source des tiles selon l'échelle
    const tileUrls = {
-     segment: 'pmtiles:///tiles/segments.pmtiles',
-     carreau200: 'pmtiles:///tiles/carreau200.pmtiles',
-     zoneTrafic: 'pmtiles:///tiles/zoneTrafic.pmtiles'
+     segment: 'pmtiles:///tiles/walk_agglo_segment.pmtiles',
+     carreau200: 'pmtiles:///tiles/walk_agglo_carreau200.pmtiles',
+     zoneTrafic: 'pmtiles:///tiles/walk_agglo_infracommunal.pmtiles'
    };
 
    // Ajouter la source
@@ -249,9 +257,9 @@ CHANGEMENTS À FAIRE :
      
      const map = mapRef.current;
      const tileUrls = {
-       segment: 'pmtiles:///tiles/segments.pmtiles',
-       carreau200: 'pmtiles:///tiles/carreau200.pmtiles',
-       zoneTrafic: 'pmtiles:///tiles/zoneTrafic.pmtiles'
+       segment: 'pmtiles:///tiles/walk_agglo_segment.pmtiles',
+       carreau200: 'pmtiles:///tiles/walk_agglo_carreau200.pmtiles',
+       zoneTrafic: 'pmtiles:///tiles/walk_agglo_infracommunal.pmtiles'
      };
      
      // Supprimer les anciennes couches/sources

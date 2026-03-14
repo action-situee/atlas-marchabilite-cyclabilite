@@ -16,3 +16,16 @@ export const VALUE_PALETTE: string[] = [
 
 // Thresholds corresponding to palette indices (excluding the first which is the < min color)
 export const VALUE_THRESHOLDS: number[] = [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1];
+
+export function getPaletteColor(value: number, thresholds: number[] = VALUE_THRESHOLDS): string {
+  const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  if (safeValue < thresholds[0]) return VALUE_PALETTE[0];
+
+  for (let index = 0; index < thresholds.length - 1; index += 1) {
+    if (safeValue >= thresholds[index] && safeValue < thresholds[index + 1]) {
+      return VALUE_PALETTE[index + 1];
+    }
+  }
+
+  return VALUE_PALETTE[VALUE_PALETTE.length - 1];
+}
