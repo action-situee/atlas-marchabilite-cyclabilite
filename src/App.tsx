@@ -15,6 +15,7 @@ const MODE_PATHS: Record<AtlasMode, string> = {
   walkability: '/marchabilite',
   bikeability: '/cyclabilite'
 };
+const DEFAULT_SCALE: AtlasScale = 'carreau200';
 
 const getModeFromPathname = (pathname: string): AtlasMode => {
   const normalizedPath = pathname.toLowerCase();
@@ -33,7 +34,7 @@ export default function App() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [mode, setMode] = useState<AtlasMode>(() => getModeFromPathname(window.location.pathname));
   const [territory, setTerritory] = useState<AnalysisTerritory>('grandGeneve');
-  const [scale, setScale] = useState<AtlasScale>('segment');
+  const [scale, setScale] = useState<AtlasScale>(DEFAULT_SCALE);
   const [attributeData, setAttributeData] = useState(() => buildEmptyScores(getModeFromPathname(window.location.pathname)));
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [showDistribution, setShowDistribution] = useState(false);
@@ -124,19 +125,19 @@ export default function App() {
   const handleModeChange = (nextMode: AtlasMode) => {
     if (nextMode === mode) return;
     setMode(nextMode);
-    setScale('segment');
+    setScale(DEFAULT_SCALE);
     syncModePath(nextMode);
   };
 
-  const resetScaleToSegment = () => {
-    setScale('segment');
+  const resetScaleToDefault = () => {
+    setScale(DEFAULT_SCALE);
   };
 
   useEffect(() => {
     const onPopState = () => {
       const nextMode = getModeFromPathname(window.location.pathname);
       setMode(nextMode);
-      setScale('segment');
+      setScale(DEFAULT_SCALE);
     };
 
     window.addEventListener('popstate', onPopState);
@@ -153,7 +154,7 @@ export default function App() {
   }, [mode]);
 
   useEffect(() => {
-    if (scale === 'carreau200' && !hasCarreau200) {
+    if (scale === DEFAULT_SCALE && !hasCarreau200) {
       setScale('segment');
     } else if (scale === 'zoneTrafic' && !hasZoneTrafic) {
       setScale('segment');
@@ -245,7 +246,7 @@ export default function App() {
             setAttributeData(buildEmptyScores(mode));
           }
         }}
-        onResetScaleToSegment={resetScaleToSegment}
+        onResetScaleToDefault={resetScaleToDefault}
         onDistributionRequest={setDistributionData}
         onDebugParamsChange={setDebugParams}
       />

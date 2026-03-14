@@ -40,7 +40,7 @@ interface MapProps {
   scale: AtlasScale;
   colorMode: 'linear' | 'quantile';
   onHoverSegment: (segment: any) => void;
-  onResetScaleToSegment?: () => void;
+  onResetScaleToDefault?: () => void;
   onDistributionRequest?: (data: DistributionData | null) => void;
   onDebugParamsChange?: (params: { attr: string; layerId: string; thresholds: number[] }) => void;
   onStatsUpdate?: (stats: Record<string, DataStats>) => void;
@@ -55,7 +55,7 @@ export function Map({
   scale,
   colorMode,
   onHoverSegment,
-  onResetScaleToSegment,
+  onResetScaleToDefault,
   onDistributionRequest,
   onDebugParamsChange,
   onStatsUpdate
@@ -291,6 +291,13 @@ export function Map({
   };
 
   const currentScale = () => scaleRef.current;
+
+  const getAnalyticsLayerId = () => {
+    const activeScale = currentScale();
+    if (activeScale === 'carreau200') return 'carreau200-fill';
+    if (activeScale === 'zoneTrafic') return 'zones-fill';
+    return 'segments-layer';
+  };
 
   const applyAnalysisConstraints = (map: any) => {
     const camera = map.cameraForBounds(ANALYSIS_BOUNDS, { padding: ANALYSIS_PADDING });
@@ -605,7 +612,8 @@ export function Map({
     const runInitialAnalytics = () => {
       map.once('idle', () => {
         const attr = activeAttribute();
-        const features = map.queryRenderedFeatures(undefined, { layers: ['segments-layer'] });
+        const analyticsLayerId = getAnalyticsLayerId();
+        const features = map.queryRenderedFeatures(undefined, { layers: [analyticsLayerId] });
         const valuesByAttr: Record<string, number[]> = {};
         for (const feature of features) {
           const props = feature.properties || {};
@@ -744,7 +752,7 @@ export function Map({
 
   const handleBasemapChange = (nextBasemap: BasemapMode) => {
     if (nextBasemap === basemap) return;
-    onResetScaleToSegment?.();
+    onResetScaleToDefault?.();
     setBasemap(nextBasemap);
   };
 
