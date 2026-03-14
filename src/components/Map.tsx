@@ -901,7 +901,7 @@ export function Map({
   const isNorthAligned = Math.min(normalizedBearing, 360 - normalizedBearing) < 1;
   const isPerspective = pitch > 10;
 
-  // Initialize MapLibre and recreate it only when the basemap changes.
+  // Initialize MapLibre and recreate it when the basemap changes.
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -1067,7 +1067,6 @@ export function Map({
 
   const handleBasemapChange = (nextBasemap: BasemapMode) => {
     if (nextBasemap === basemap) return;
-    onResetScaleToDefault?.();
     setBasemap(nextBasemap);
   };
 
