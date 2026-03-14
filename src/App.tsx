@@ -11,11 +11,22 @@ import { buildEmptyScores, MODE_CONFIGS, type AnalysisTerritory, type AtlasMode,
 
 const SITUATED_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
 
+const MODE_HASHES: Record<AtlasMode, string> = {
+  walkability: '#marchabilite',
+  bikeability: '#cyclabilite'
+};
 const MODE_PATHS: Record<AtlasMode, string> = {
   walkability: '/marchabilite',
   bikeability: '/cyclabilite'
 };
-const DEFAULT_SCALE: AtlasScale = 'carreau200';
+const DEFAULT_SCALE: AtlasScale = 'segment';
+
+const getModeFromHash = (hash: string): AtlasMode | null => {
+  const normalizedHash = hash.toLowerCase();
+  if (normalizedHash === MODE_HASHES.bikeability) return 'bikeability';
+  if (normalizedHash === MODE_HASHES.walkability) return 'walkability';
+  return null;
+};
 
 const getModeFromPathname = (pathname: string): AtlasMode => {
   const normalizedPath = pathname.toLowerCase();
@@ -28,14 +39,22 @@ const getModeFromPathname = (pathname: string): AtlasMode => {
   return 'walkability';
 };
 
+const getModeFromLocation = (location: Location): AtlasMode => {
+  const hashMode = getModeFromHash(location.hash);
+  if (hashMode) return hashMode;
+  return getModeFromPathname(location.pathname);
+};
+
+const buildModeUrl = (mode: AtlasMode, search = window.location.search) => `/${search}${MODE_HASHES[mode]}`;
+
 export default function App() {
   const [selectedAttribute, setSelectedAttribute] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [mode, setMode] = useState<AtlasMode>(() => getModeFromPathname(window.location.pathname));
-  const [territory, setTerritory] = useState<AnalysisTerritory>('grandGeneve');
+  const [mode, setMode] = useState<AtlasMode>(() => getModeFromLocation(window.location));
+  const [territory, setTerritory] = useState<AnalysisTerritory>('cantonGeneve');
   const [scale, setScale] = useState<AtlasScale>(DEFAULT_SCALE);
-  const [attributeData, setAttributeData] = useState(() => buildEmptyScores(getModeFromPathname(window.location.pathname)));
+  const [attributeData, setAttributeData] = useState(() => buildEmptyScores(getModeFromLocation(window.location)));
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [showDistribution, setShowDistribution] = useState(false);
   const [distributionData, setDistributionData] = useState<DistributionData | null>(null);
@@ -109,9 +128,8 @@ export default function App() {
     setSelectedClass(null);
   };
 
-  const syncModePath = (nextMode: AtlasMode, replace = false) => {
-    const nextPath = MODE_PATHS[nextMode];
-    const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
+  const syncModeHash = (nextMode: AtlasMode, replace = false) => {
+    const nextUrl = buildModeUrl(nextMode);
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (currentUrl === nextUrl) return;
 
@@ -126,7 +144,7 @@ export default function App() {
     if (nextMode === mode) return;
     setMode(nextMode);
     setScale(DEFAULT_SCALE);
-    syncModePath(nextMode);
+    syncModeHash(nextMode);
   };
 
   const resetScaleToDefault = () => {
@@ -134,15 +152,23 @@ export default function App() {
   };
 
   useEffect(() => {
-    const onPopState = () => {
-      const nextMode = getModeFromPathname(window.location.pathname);
+    const syncModeFromUrl = () => {
+      const nextMode = getModeFromLocation(window.location);
       setMode(nextMode);
       setScale(DEFAULT_SCALE);
     };
 
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    window.addEventListener('popstate', syncModeFromUrl);
+    window.addEventListener('hashchange', syncModeFromUrl);
+    return () => {
+      window.removeEventListener('popstate', syncModeFromUrl);
+      window.removeEventListener('hashchange', syncModeFromUrl);
+    };
   }, []);
+
+  useEffect(() => {
+    syncModeHash(mode, true);
+  }, [mode]);
 
   useEffect(() => {
     setSelectedAttribute(null);
@@ -182,7 +208,7 @@ export default function App() {
             </a>
             <div className="flex flex-col gap-0">
               <h1 className="text-[#1A1A1A] text-lg" style={{ fontFamily: 'Arial, sans-serif' }}>
-                Atlas Mobilité Active
+                Marchabilité & Cyclabilité
               </h1>
               <p className="text-[10px]" style={{ color: '#1A1A1A', fontFamily: 'Arial, sans-serif' }}>
                 Plateforme de recherche développée sur fonds propres pour accélérer la transition

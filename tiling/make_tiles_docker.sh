@@ -86,6 +86,7 @@ build_carreau_tiles() {
   local basename="$3"
   local mbtiles_name="$4"
   local pmtiles_name="$5"
+  local minzoom="${6:-8}"
 
   if [ -z "$input" ]; then
     echo "⚠️  Skipping $label/carreau200: input parquet not found"
@@ -101,18 +102,21 @@ build_carreau_tiles() {
   run_gdal -f GeoJSONSeq "$ndjson" "$input"
 
   echo "➡️  [$label/carreau200] tippecanoe strict tiling"
-  run_tippecanoe \
+  local -a tippecanoe_args=(
     -o "$mbtiles" "$ndjson" \
     -l "carreau200" \
-    -Z8 -z15 \
+    -Z"$minzoom" -z15 \
     --no-feature-limit \
     --no-tile-size-limit \
     --no-simplification \
     --no-clipping \
     --no-line-simplification \
+    --detect-shared-borders \
     --no-tiny-polygon-reduction \
     --buffer=4 \
-    --drop-densest-as-needed
+    --no-tile-stats
+  )
+  run_tippecanoe "${tippecanoe_args[@]}"
 
   echo "➡️  [$label/carreau200] pmtiles convert → PMTiles ($pmtiles_name)"
   run_pmtiles convert "$mbtiles" "$pmtiles"
@@ -143,11 +147,13 @@ build_vector_tiles \
   "walknet" \
   "walk_agglo_segment.mbtiles" \
   "walk_agglo_segment.pmtiles" \
-  -Z8 -z16 \
+  -Z8 -z15 \
+  --base-zoom=11 \
+  --drop-rate=1.1 \
+  --maximum-tile-bytes=2000000 \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \
-  --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-stats
 
 build_carreau_tiles \
   "walkability/AggloGG" \
@@ -163,11 +169,16 @@ build_vector_tiles \
   "zone_trafic" \
   "walk_agglo_infracommunal.mbtiles" \
   "walk_agglo_infracommunal.pmtiles" \
-  -Z8 -z13 \
-  --drop-densest-as-needed \
-  --extend-zooms-if-still-dropping \
+  -Z7 -z13 \
   --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-size-limit \
+  --no-simplification \
+  --no-clipping \
+  --no-line-simplification \
+  --detect-shared-borders \
+  --no-tiny-polygon-reduction \
+  --buffer=4 \
+  --no-tile-stats
 
 build_vector_tiles \
   "walkability/CantonGE/segment" \
@@ -176,11 +187,13 @@ build_vector_tiles \
   "walknet" \
   "walk_canton_segment.mbtiles" \
   "walk_canton_segment.pmtiles" \
-  -Z8 -z16 \
+  -Z8 -z15 \
+  --base-zoom=11 \
+  --drop-rate=1.1 \
+  --maximum-tile-bytes=2000000 \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \
-  --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-stats
 
 build_carreau_tiles \
   "walkability/CantonGE" \
@@ -196,11 +209,16 @@ build_vector_tiles \
   "zone_trafic" \
   "walk_canton_infracommunal.mbtiles" \
   "walk_canton_infracommunal.pmtiles" \
-  -Z8 -z13 \
-  --drop-densest-as-needed \
-  --extend-zooms-if-still-dropping \
+  -Z7 -z13 \
   --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-size-limit \
+  --no-simplification \
+  --no-clipping \
+  --no-line-simplification \
+  --detect-shared-borders \
+  --no-tiny-polygon-reduction \
+  --buffer=4 \
+  --no-tile-stats
 
 build_vector_tiles \
   "bikeability/AggloGG/segment" \
@@ -209,18 +227,21 @@ build_vector_tiles \
   "bikenet" \
   "bike_agglo_segment.mbtiles" \
   "bike_agglo_segment.pmtiles" \
-  -Z8 -z16 \
+  -Z8 -z15 \
+  --base-zoom=11 \
+  --drop-rate=1.1 \
+  --maximum-tile-bytes=2000000 \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \
-  --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-stats
 
 build_carreau_tiles \
   "bikeability/AggloGG" \
   "$BIKE_GG_CAR_INPUT" \
   "bike_agglo_carreau200" \
   "bike_agglo_carreau200.mbtiles" \
-  "bike_agglo_carreau200.pmtiles"
+  "bike_agglo_carreau200.pmtiles" \
+  7
 
 build_vector_tiles \
   "bikeability/AggloGG/infra_communal" \
@@ -229,11 +250,16 @@ build_vector_tiles \
   "infra_communal" \
   "bike_agglo_infracommunal.mbtiles" \
   "bike_agglo_infracommunal.pmtiles" \
-  -Z8 -z13 \
-  --drop-densest-as-needed \
-  --extend-zooms-if-still-dropping \
+  -Z7 -z13 \
   --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-size-limit \
+  --no-simplification \
+  --no-clipping \
+  --no-line-simplification \
+  --detect-shared-borders \
+  --no-tiny-polygon-reduction \
+  --buffer=4 \
+  --no-tile-stats
 
 build_vector_tiles \
   "bikeability/CantonGE/segment" \
@@ -242,18 +268,21 @@ build_vector_tiles \
   "bikenet" \
   "bike_canton_segment.mbtiles" \
   "bike_canton_segment.pmtiles" \
-  -Z8 -z16 \
+  -Z8 -z15 \
+  --base-zoom=11 \
+  --drop-rate=1.1 \
+  --maximum-tile-bytes=2000000 \
   --drop-densest-as-needed \
   --extend-zooms-if-still-dropping \
-  --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-stats
 
 build_carreau_tiles \
   "bikeability/CantonGE" \
   "$BIKE_CANTON_CAR_INPUT" \
   "bike_canton_carreau200" \
   "bike_canton_carreau200.mbtiles" \
-  "bike_canton_carreau200.pmtiles"
+  "bike_canton_carreau200.pmtiles" \
+  7
 
 build_vector_tiles \
   "bikeability/CantonGE/infra_communal" \
@@ -262,11 +291,16 @@ build_vector_tiles \
   "infra_communal" \
   "bike_canton_infracommunal.mbtiles" \
   "bike_canton_infracommunal.pmtiles" \
-  -Z8 -z13 \
-  --drop-densest-as-needed \
-  --extend-zooms-if-still-dropping \
+  -Z7 -z13 \
   --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-size-limit \
+  --no-simplification \
+  --no-clipping \
+  --no-line-simplification \
+  --detect-shared-borders \
+  --no-tiny-polygon-reduction \
+  --buffer=4 \
+  --no-tile-stats
 
 build_vector_tiles \
   "perimeter/canton" \
@@ -276,7 +310,6 @@ build_vector_tiles \
   "canton_perimeter.mbtiles" \
   "canton_perimeter.pmtiles" \
   -Z0 -z16 \
-  --no-feature-limit \
-  --no-tile-size-limit
+  --no-tile-stats
 
 echo "✅ All requested tiles were built into $PUB_TILES_DIR"

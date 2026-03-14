@@ -3,22 +3,19 @@ import { getPaletteColor, VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
 import { Box, Compass, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
+import { PMTiles, Protocol } from 'pmtiles';
 import type { DistributionData } from './DistributionChart';
 import { computeStats, type DataStats } from '../utils/normalize';
 import { MODE_CONFIGS, getAttributeKeys, getClassFieldMap, type AnalysisTerritory, type AtlasMode, type AtlasScale } from '../config/modes';
 
 type BasemapMode = 'voyager' | 'swissLight' | 'swissImagery' | 'none';
+type CameraState = {
+  center: [number, number];
+  zoom: number;
+  bearing: number;
+  pitch: number;
+};
 
-const DEFAULT_CENTER: [number, number] = [6.1432, 46.2044];
-const DEFAULT_ZOOM = 13;
-const DEFAULT_BEARING = 0;
-const DEFAULT_PITCH = 0;
-const DEFAULT_VOYAGER_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json';
-const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
-const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
-const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const ANALYSIS_BOUNDS: [[number, number], [number, number]] = [
   [5.600526, 45.857307],
   [6.646596, 46.635298]
@@ -28,8 +25,19 @@ const ANALYSIS_MAX_BOUNDS: [[number, number], [number, number]] = [
   [7.086596, 46.995298]
 ];
 const ANALYSIS_PADDING = { top: 48, right: 48, bottom: 48, left: 48 };
-const ANALYSIS_MIN_ZOOM_FLOOR = 6.4;
+const ANALYSIS_MIN_ZOOM_FLOOR = 8;
+const DEFAULT_CENTER: [number, number] = [6.1600, 46.2300];
+const DEFAULT_ZOOM = 11;
+const DEFAULT_BEARING = 0;
+const DEFAULT_PITCH = 0;
+const DEFAULT_VOYAGER_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json';
+const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
+const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
+const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin|airport|airfield|aerodrome|aeroway/i;
+const PLACE_LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin/i;
+const WATER_LAYER_PATTERN = /water|lake|ocean|river|canal|stream|reservoir/i;
 
 interface MapProps {
   selectedAttribute: string | null;
@@ -70,15 +78,23 @@ export function Map({
   const distributionRequestRef = useRef(onDistributionRequest);
   const showLabelsRef = useRef(false);
   const showPerimeterRef = useRef(false);
-  const cameraStateRef = useRef({
+  const cameraStateRef = useRef<CameraState>({
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     bearing: DEFAULT_BEARING,
     pitch: DEFAULT_PITCH
   });
+  const cameraAnimationFrameRef = useRef<number | null>(null);
+  const cursorAnimationFrameRef = useRef<number | null>(null);
+  const cursorPositionRef = useRef<{ lng: number; lat: number } | null>(null);
   const initialAnalyticsDoneRef = useRef(false);
+  const loadRequestRef = useRef(0);
+  const loadingCleanupRef = useRef<(() => void) | null>(null);
+  const loadingTimeoutRef = useRef<number | null>(null);
+  const protocolRef = useRef<Protocol | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
+  const theme = modeConfig.theme;
   const attrKeys = getAttributeKeys(mode);
   const classFieldMap = getClassFieldMap(mode);
   const env = import.meta.env as Record<string, string | undefined>;
@@ -90,6 +106,7 @@ export function Map({
   const [quantileThresholds, setQuantileThresholds] = useState<number[]>([]);
   const [quantileMap, setQuantileMap] = useState<Record<string, number[]>>({});
   const [loadingStage, setLoadingStage] = useState<'initial' | 'tiles' | 'quantiles' | 'distribution' | 'done'>('initial');
+  const [loadingDetail, setLoadingDetail] = useState('');
   const [attributeStats, setAttributeStats] = useState<Record<string, DataStats>>({});
   const [basemap, setBasemap] = useState<BasemapMode>('voyager');
   const [showLabels, setShowLabels] = useState(false);
@@ -97,6 +114,8 @@ export function Map({
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
   const [pitch, setPitch] = useState(DEFAULT_PITCH);
   const [labelsAvailable, setLabelsAvailable] = useState(true);
+  const [cameraDebug, setCameraDebug] = useState<CameraState>(cameraStateRef.current);
+  const [cursorDebug, setCursorDebug] = useState<{ lng: number; lat: number } | null>(null);
 
   scaleRef.current = scale;
   hoverSegmentRef.current = onHoverSegment;
@@ -180,17 +199,21 @@ export function Map({
     return resolveStyleUrl(env.VITE_MAP_STYLE_VOYAGER || env.VITE_MAP_STYLE_POSITRON || env.VITE_MAP_STYLE_LIGHT || DEFAULT_VOYAGER_STYLE);
   };
 
-  const resolveSource = (sourceKey: AtlasScale) => {
-    const sourceConfig = modeConfig.sources[sourceKey];
+  const resolveSource = (
+    sourceKey: AtlasScale,
+    currentMode: AtlasMode = mode,
+    currentTerritory: AnalysisTerritory = territory
+  ) => {
+    const sourceConfig = MODE_CONFIGS[currentMode].sources[sourceKey];
     const tilejsonUrl =
-      resolveEnvValue(sourceConfig.territoryTilejsonEnvKeys?.[territory] || []) ||
-      sourceConfig.defaultTilejsonByTerritory?.[territory] ||
+      resolveEnvValue(sourceConfig.territoryTilejsonEnvKeys?.[currentTerritory] || []) ||
+      sourceConfig.defaultTilejsonByTerritory?.[currentTerritory] ||
       resolveEnvValue(sourceConfig.tilejsonEnvKeys) ||
       sourceConfig.defaultTilejson ||
       '';
     const pmtilesUrl =
-      resolveEnvValue(sourceConfig.territoryPmtilesEnvKeys?.[territory] || []) ||
-      sourceConfig.defaultPmtilesByTerritory?.[territory] ||
+      resolveEnvValue(sourceConfig.territoryPmtilesEnvKeys?.[currentTerritory] || []) ||
+      sourceConfig.defaultPmtilesByTerritory?.[currentTerritory] ||
       resolveEnvValue(sourceConfig.pmtilesEnvKeys) ||
       sourceConfig.defaultPmtiles ||
       '';
@@ -228,6 +251,7 @@ export function Map({
       bearing: map.getBearing(),
       pitch: map.getPitch()
     };
+    setCameraDebug(cameraStateRef.current);
     setBearing(cameraStateRef.current.bearing);
     setPitch(cameraStateRef.current.pitch);
   };
@@ -247,6 +271,40 @@ export function Map({
       .map((layer: any) => layer.id);
   };
 
+  const getPlaceLabelLayerIds = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    const textLayers = layers.filter((layer: any) => {
+      if (layer.type !== 'symbol') return false;
+      return typeof layer.layout?.['text-field'] !== 'undefined';
+    });
+    return textLayers
+      .filter((layer: any) => {
+        const layerId = String(layer.id || '');
+        const sourceLayer = String(layer['source-layer'] || '');
+        return PLACE_LABEL_LAYER_PATTERN.test(layerId) || PLACE_LABEL_LAYER_PATTERN.test(sourceLayer);
+      })
+      .map((layer: any) => layer.id);
+  };
+
+  const applyFrenchPlaceLabels = (map: any) => {
+    const placeLabelIds = getPlaceLabelLayerIds(map);
+    const frenchLabelExpression: any[] = [
+      'coalesce',
+      ['get', 'name_fr'],
+      ['get', 'name:fr'],
+      ['get', 'name_fr_latin'],
+      ['get', 'name:fr-Latn'],
+      ['get', 'name'],
+      ['get', 'name_en']
+    ];
+
+    for (const layerId of placeLabelIds) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'text-field', frenchLabelExpression as any);
+      }
+    }
+  };
+
   const applyTextLayerVisibility = (map: any, visible: boolean) => {
     const labelLayerIds = getLabelLayerIds(map);
     setLabelsAvailable(labelLayerIds.length > 0);
@@ -260,6 +318,27 @@ export function Map({
   const moveLabelLayersToTop = (map: any) => {
     const labelLayerIds = getLabelLayerIds(map);
     for (const layerId of labelLayerIds) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
+  };
+
+  const getWaterLayerIds = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    return layers
+      .filter((layer: any) => {
+        if (!['fill', 'line'].includes(layer.type)) return false;
+        const layerId = String(layer.id || '');
+        const sourceLayer = String(layer['source-layer'] || '');
+        return WATER_LAYER_PATTERN.test(layerId) || WATER_LAYER_PATTERN.test(sourceLayer);
+      })
+      .map((layer: any) => layer.id);
+  };
+
+  const moveWaterLayersAboveAtlas = (map: any) => {
+    const waterLayerIds = getWaterLayerIds(map);
+    for (const layerId of waterLayerIds) {
       if (map.getLayer(layerId)) {
         map.moveLayer(layerId);
       }
@@ -309,10 +388,104 @@ export function Map({
     map.setMaxBounds(ANALYSIS_MAX_BOUNDS);
   };
 
-  const ensureAtlasLayers = (map: any) => {
-    const segmentSource = resolveSource('segment');
-    const carreau200Source = resolveSource('carreau200');
-    const zoneTraficSource = resolveSource('zoneTrafic');
+  const clearLoadingArtifacts = () => {
+    if (loadingCleanupRef.current) {
+      loadingCleanupRef.current();
+      loadingCleanupRef.current = null;
+    }
+    if (loadingTimeoutRef.current !== null) {
+      window.clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+  };
+
+  const preloadPmtilesHeaders = (currentMode: AtlasMode, currentTerritory: AnalysisTerritory) => {
+    if (!protocolRef.current) return;
+
+    const sourceUrls = [
+      resolveSource('segment', currentMode, currentTerritory).url,
+      resolveSource('carreau200', currentMode, currentTerritory).url,
+      resolveSource('zoneTrafic', currentMode, currentTerritory).url,
+      resolvePerimeterSource().url
+    ];
+
+    for (const sourceUrl of sourceUrls) {
+      if (!sourceUrl.startsWith('pmtiles://')) continue;
+      const rawUrl = sourceUrl.replace(/^pmtiles:\/\//, '');
+      let archive = protocolRef.current.get(rawUrl);
+      if (!archive) {
+        archive = new PMTiles(rawUrl);
+        protocolRef.current.add(archive);
+      }
+      void archive.getHeader().catch(() => undefined);
+    }
+  };
+
+  const preloadAdjacentHeaders = (currentMode: AtlasMode, currentTerritory: AnalysisTerritory) => {
+    preloadPmtilesHeaders(currentMode, currentTerritory);
+    preloadPmtilesHeaders(currentMode === 'walkability' ? 'bikeability' : 'walkability', currentTerritory);
+  };
+
+  const getTrackedSourceIds = (currentMode: AtlasMode = mode, currentTerritory: AnalysisTerritory = territory) => {
+    const sourceIds = ['segments'];
+    if (resolveSource('carreau200', currentMode, currentTerritory).url) sourceIds.push('carreau200');
+    if (resolveSource('zoneTrafic', currentMode, currentTerritory).url) sourceIds.push('zones_trafic');
+    if (resolvePerimeterSource().url) sourceIds.push('perimeter');
+    return sourceIds;
+  };
+
+  const removeAtlasLayersAndSources = (map: any) => {
+    const layerIds = [
+      'perimeter-outline',
+      'perimeter-casing',
+      'segments-hit-area',
+      'segments-layer',
+      'carreau200-outline',
+      'carreau200-fill',
+      'zones-outline',
+      'zones-fill'
+    ];
+    const sourceIds = ['perimeter', 'segments', 'carreau200', 'zones_trafic'];
+
+    for (const layerId of layerIds) {
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId);
+      }
+    }
+
+    for (const sourceId of sourceIds) {
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    }
+  };
+
+  const finishLoading = (requestId: number, detail = 'Sources prêtes') => {
+    if (loadRequestRef.current !== requestId) return;
+
+    setLoadingStage('done');
+    setLoadingDetail(detail);
+    setLoadingProgress(100);
+
+    if (loadingTimeoutRef.current !== null) {
+      window.clearTimeout(loadingTimeoutRef.current);
+    }
+    loadingTimeoutRef.current = window.setTimeout(() => {
+      if (loadRequestRef.current !== requestId) return;
+      setIsLoading(false);
+      setLoadingDetail('');
+      loadingTimeoutRef.current = null;
+    }, 180);
+  };
+
+  const ensureAtlasLayers = (
+    map: any,
+    currentMode: AtlasMode = mode,
+    currentTerritory: AnalysisTerritory = territory
+  ) => {
+    const segmentSource = resolveSource('segment', currentMode, currentTerritory);
+    const carreau200Source = resolveSource('carreau200', currentMode, currentTerritory);
+    const zoneTraficSource = resolveSource('zoneTrafic', currentMode, currentTerritory);
     const perimeterSource = resolvePerimeterSource();
 
     const SEG_URL = segmentSource.url;
@@ -412,9 +585,9 @@ export function Map({
           source: 'segments',
           'source-layer': SEG_LAYER,
           paint: {
-            'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.45, 10, 0.8, 15, 2.2],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.05, 8, 1.35, 10, 1.55, 11, 1.7, 15, 2.2],
             'line-color': '#96C8A6',
-            'line-opacity': 0.88
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.98, 8, 0.95, 11, 0.92, 15, 0.88]
           },
           layout: { visibility: 'visible' }
         }
@@ -429,7 +602,7 @@ export function Map({
           source: 'segments',
           'source-layer': SEG_LAYER,
           paint: {
-            'line-width': ['interpolate', ['linear'], ['zoom'], 8, 7, 10, 10, 15, 15],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 8, 8, 9, 10, 11, 15, 15],
             'line-color': 'transparent',
             'line-opacity': 0
           },
@@ -461,9 +634,9 @@ export function Map({
         'source-layer': PERIMETER_LAYER,
         paint: {
           'line-color': '#000000',
-          'line-width': 3,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 10, 1.8, 12, 2.4, 14, 3],
           'line-dasharray': [0, 2.2],
-          'line-opacity': 1
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.18, 10, 0.32, 12, 0.62, 14, 0.92]
         },
         layout: {
           visibility: showPerimeterRef.current ? 'visible' : 'none',
@@ -473,10 +646,200 @@ export function Map({
       });
     }
 
+    applyFrenchPlaceLabels(map);
+    moveWaterLayersAboveAtlas(map);
+    for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
     moveLabelLayersToTop(map);
     applyTextLayerVisibility(map, showLabelsRef.current);
     setScaleVisibility(map, currentScale());
     setPerimeterVisibility(map, showPerimeterRef.current);
+  };
+
+  const refreshAtlasData = (
+    map: any,
+    recomputeAnalytics: boolean,
+    currentMode: AtlasMode = mode,
+    currentTerritory: AnalysisTerritory = territory
+  ) => {
+    const requestId = ++loadRequestRef.current;
+    clearLoadingArtifacts();
+
+    lastModeRef.current = currentMode;
+    lastTerritoryRef.current = currentTerritory;
+    hoverSegmentRef.current(null);
+    setLabelsAvailable(true);
+    setLoadingStage('initial');
+    setLoadingDetail(recomputeAnalytics ? 'Préparation des sources' : 'Mise à jour des couches');
+    setLoadingProgress(recomputeAnalytics ? 8 : 16);
+    setIsLoading(true);
+
+    if (recomputeAnalytics) {
+      initialAnalyticsDoneRef.current = false;
+      setQuantileThresholds([]);
+      setQuantileMap({});
+      setAttributeStats({});
+    }
+
+    removeAtlasLayersAndSources(map);
+    ensureAtlasLayers(map, currentMode, currentTerritory);
+    setScaleVisibility(map, currentScale());
+    applyTextLayerVisibility(map, showLabelsRef.current);
+    setPerimeterVisibility(map, showPerimeterRef.current);
+
+    const trackedSourceIds = getTrackedSourceIds(currentMode, currentTerritory);
+
+    const updateSourceProgress = () => {
+      const totalCount = trackedSourceIds.length;
+      const loadedCount = trackedSourceIds.filter((sourceId) => {
+        if (!map.getSource(sourceId)) return true;
+        try {
+          return map.isSourceLoaded(sourceId);
+        } catch {
+          return false;
+        }
+      }).length;
+      const ratio = totalCount === 0 ? 1 : loadedCount / totalCount;
+      const baseProgress = recomputeAnalytics ? 18 : 28;
+      const maxProgress = recomputeAnalytics ? 72 : 94;
+
+      setLoadingStage('tiles');
+      setLoadingDetail(totalCount > 0 ? `${loadedCount}/${totalCount} sources prêtes` : 'Sources prêtes');
+      setLoadingProgress((previous) => Math.max(previous, baseProgress + ratio * (maxProgress - baseProgress)));
+
+      return { loadedCount, totalCount, ratio };
+    };
+
+    const runAnalytics = () => {
+      if (loadRequestRef.current !== requestId) return;
+
+      const attr = activeAttribute();
+      const analyticsLayerId = getAnalyticsLayerId();
+      const features = map.queryRenderedFeatures(undefined, { layers: [analyticsLayerId] });
+      const valuesByAttr: Record<string, number[]> = {};
+
+      for (const feature of features) {
+        const props = feature.properties || {};
+        for (const [key, value] of Object.entries(props)) {
+          const numericValue = toNumeric(value);
+          if (attrKeys.has(key) && numericValue !== null && numericValue >= 0 && numericValue <= 1) {
+            if (!valuesByAttr[key]) valuesByAttr[key] = [];
+            valuesByAttr[key].push(numericValue);
+          }
+        }
+      }
+
+      setLoadingStage('quantiles');
+      setLoadingDetail('Calcul des quantiles');
+      setLoadingProgress((previous) => Math.max(previous, 82));
+
+      const paletteSteps = VALUE_PALETTE.length - 1;
+      const nextQuantileMap: Record<string, number[]> = {};
+      for (const [key, values] of Object.entries(valuesByAttr)) {
+        if (values.length < 10) continue;
+        const sorted = [...values].sort((a, b) => a - b);
+        const thresholds: number[] = [];
+        for (let i = 1; i <= paletteSteps; i += 1) {
+          const p = i / paletteSteps;
+          const pos = (sorted.length - 1) * p;
+          const lower = Math.floor(pos);
+          const upper = Math.ceil(pos);
+          const weight = pos - lower;
+          const quantileValue = sorted[lower] * (1 - weight) + sorted[upper] * weight;
+          thresholds.push(Number(quantileValue.toFixed(6)));
+        }
+        for (let i = 1; i < thresholds.length; i += 1) {
+          if (thresholds[i] <= thresholds[i - 1]) {
+            thresholds[i] = Number((thresholds[i - 1] + 1e-6).toFixed(6));
+          }
+        }
+        nextQuantileMap[key] = thresholds;
+      }
+
+      setQuantileMap(nextQuantileMap);
+      const activeThresholds = nextQuantileMap[attr] || VALUE_THRESHOLDS;
+      setQuantileThresholds(activeThresholds);
+
+      const stats: Record<string, DataStats> = {};
+      for (const [key, values] of Object.entries(valuesByAttr)) {
+        stats[key] = computeStats(values as number[]);
+      }
+      setAttributeStats(stats);
+      onStatsUpdate?.(stats);
+
+      applyRamp(attr, colorMode === 'quantile' ? activeThresholds : undefined);
+
+      setLoadingStage('distribution');
+      setLoadingDetail('Mise à jour des panneaux');
+      setLoadingProgress((previous) => Math.max(previous, 94));
+
+      if (distributionRequestRef.current) {
+        distributionRequestRef.current(
+          computeDistribution(attr, colorMode === 'quantile' ? activeThresholds : VALUE_THRESHOLDS)
+        );
+      }
+
+      initialAnalyticsDoneRef.current = true;
+      preloadAdjacentHeaders(currentMode, currentTerritory);
+      finishLoading(requestId, 'Marchabilité et cyclabilité synchronisées');
+    };
+
+    let handledIdle = false;
+    const handleSourceLoading = (event: any) => {
+      if (loadRequestRef.current !== requestId) return;
+      if (trackedSourceIds.includes(String(event.sourceId || ''))) {
+        updateSourceProgress();
+      }
+    };
+
+    const handleSourceData = (event: any) => {
+      if (loadRequestRef.current !== requestId) return;
+      if (trackedSourceIds.includes(String(event.sourceId || ''))) {
+        updateSourceProgress();
+      }
+    };
+
+    const handleIdle = () => {
+      if (loadRequestRef.current !== requestId || handledIdle) return;
+      const { ratio } = updateSourceProgress();
+      if (ratio < 1 || !map.areTilesLoaded()) return;
+
+      handledIdle = true;
+      clearLoadingArtifacts();
+
+      const attr = activeAttribute();
+      const thresholds = colorMode === 'quantile' ? quantileMap[attr] || VALUE_THRESHOLDS : undefined;
+      applyRamp(attr, thresholds);
+      setScaleVisibility(map, currentScale());
+
+      if (recomputeAnalytics) {
+        runAnalytics();
+      } else {
+        if (distributionRequestRef.current) {
+          distributionRequestRef.current(
+            computeDistribution(attr, colorMode === 'quantile' ? quantileMap[attr] || VALUE_THRESHOLDS : VALUE_THRESHOLDS)
+          );
+        }
+        preloadAdjacentHeaders(currentMode, currentTerritory);
+        finishLoading(requestId);
+      }
+    };
+
+    map.on('sourcedataloading', handleSourceLoading);
+    map.on('sourcedata', handleSourceData);
+    map.on('idle', handleIdle);
+
+    loadingCleanupRef.current = () => {
+      map.off('sourcedataloading', handleSourceLoading);
+      map.off('sourcedata', handleSourceData);
+      map.off('idle', handleIdle);
+    };
+
+    updateSourceProgress();
+    requestAnimationFrame(() => handleIdle());
   };
 
   const buttonBaseStyle = (active = false, compact = false): CSSProperties => ({
@@ -511,7 +874,7 @@ export function Map({
   const isNorthAligned = Math.min(normalizedBearing, 360 - normalizedBearing) < 1;
   const isPerspective = pitch > 10;
 
-  // Initialize MapLibre and recreate it when the thematic mode, territory or basemap changes.
+  // Initialize MapLibre and recreate it only when the basemap changes.
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -519,34 +882,22 @@ export function Map({
       lastModeRef.current !== mode ||
       lastTerritoryRef.current !== territory ||
       !initialAnalyticsDoneRef.current;
-    if (shouldRecomputeAnalytics) {
-      initialAnalyticsDoneRef.current = false;
-    }
+
     setMapLoaded(false);
     setLabelsAvailable(true);
     setBearing(cameraStateRef.current.bearing);
     setPitch(cameraStateRef.current.pitch);
-    if (shouldRecomputeAnalytics) {
-      setLoadingProgress(0);
-      setLoadingStage('initial');
-      setIsLoading(true);
-      setQuantileThresholds([]);
-      setQuantileMap({});
-      setAttributeStats({});
-    } else {
-      setLoadingProgress(100);
-      setLoadingStage('done');
-      setIsLoading(false);
-    }
-    lastModeRef.current = mode;
-    lastTerritoryRef.current = territory;
+    setLoadingStage('initial');
+    setLoadingDetail('Initialisation du fond de carte');
+    setLoadingProgress(shouldRecomputeAnalytics ? 4 : 8);
+    setIsLoading(true);
 
     const maplibreAny = maplibregl as typeof maplibregl & {
       addProtocol?: (name: string, handler: (params: any, callback: any) => void) => void;
       removeProtocol?: (name: string) => void;
     };
-    const protocol = new Protocol();
-    maplibreAny.addProtocol?.('pmtiles', protocol.tile);
+    protocolRef.current ||= new Protocol();
+    maplibreAny.addProtocol?.('pmtiles', protocolRef.current.tile);
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -596,6 +947,14 @@ export function Map({
       setPitch(map.getPitch());
     };
 
+    const queueCameraSync = () => {
+      if (cameraAnimationFrameRef.current !== null) return;
+      cameraAnimationFrameRef.current = requestAnimationFrame(() => {
+        cameraAnimationFrameRef.current = null;
+        syncCameraState(map);
+      });
+    };
+
     const persistCamera = () => {
       syncCameraState(map);
     };
@@ -606,113 +965,42 @@ export function Map({
 
     map.on('rotate', updateOrientation);
     map.on('pitch', updateOrientation);
+    map.on('move', queueCameraSync);
     map.on('moveend', persistCamera);
     map.on('resize', handleResize);
-
-    const runInitialAnalytics = () => {
-      map.once('idle', () => {
-        const attr = activeAttribute();
-        const analyticsLayerId = getAnalyticsLayerId();
-        const features = map.queryRenderedFeatures(undefined, { layers: [analyticsLayerId] });
-        const valuesByAttr: Record<string, number[]> = {};
-        for (const feature of features) {
-          const props = feature.properties || {};
-          for (const [key, value] of Object.entries(props)) {
-            const numericValue = toNumeric(value);
-            if (attrKeys.has(key) && numericValue !== null && numericValue >= 0 && numericValue <= 1) {
-              if (!valuesByAttr[key]) valuesByAttr[key] = [];
-              valuesByAttr[key].push(numericValue);
-            }
-          }
-        }
-
-        setLoadingStage('tiles');
-        setLoadingProgress(50);
-
-        const paletteSteps = VALUE_PALETTE.length - 1;
-        const nextQuantileMap: Record<string, number[]> = {};
-        for (const [key, values] of Object.entries(valuesByAttr)) {
-          if (values.length < 10) continue;
-          const sorted = [...values].sort((a, b) => a - b);
-          const thresholds: number[] = [];
-          for (let i = 1; i <= paletteSteps; i += 1) {
-            const p = i / paletteSteps;
-            const pos = (sorted.length - 1) * p;
-            const lower = Math.floor(pos);
-            const upper = Math.ceil(pos);
-            const weight = pos - lower;
-            const quantileValue = sorted[lower] * (1 - weight) + sorted[upper] * weight;
-            thresholds.push(Number(quantileValue.toFixed(6)));
-          }
-          for (let i = 1; i < thresholds.length; i += 1) {
-            if (thresholds[i] <= thresholds[i - 1]) {
-              thresholds[i] = Number((thresholds[i - 1] + 1e-6).toFixed(6));
-            }
-          }
-          nextQuantileMap[key] = thresholds;
-        }
-
-        setQuantileMap(nextQuantileMap);
-        const activeThresholds = nextQuantileMap[attr] || VALUE_THRESHOLDS;
-        setQuantileThresholds(activeThresholds);
-        setLoadingStage('quantiles');
-        setLoadingProgress(75);
-
-        const stats: Record<string, DataStats> = {};
-        for (const [key, values] of Object.entries(valuesByAttr)) {
-          stats[key] = computeStats(values as number[]);
-        }
-        setAttributeStats(stats);
-        if (onStatsUpdate) {
-          onStatsUpdate(stats);
-        }
-
-        applyRamp(attr, colorMode === 'quantile' ? activeThresholds : undefined);
-        const distribution = computeDistribution(attr, colorMode === 'quantile' ? activeThresholds : VALUE_THRESHOLDS);
-        if (distributionRequestRef.current) {
-          distributionRequestRef.current(distribution);
-        }
-        setLoadingStage('distribution');
-        setLoadingProgress(90);
-        initialAnalyticsDoneRef.current = true;
-        setTimeout(() => {
-          setLoadingStage('done');
-          setLoadingProgress(100);
-          setIsLoading(false);
-        }, 400);
-      });
-    };
+    queueCameraSync();
 
     map.once('load', () => {
       setMapLoaded(true);
-      ensureAtlasLayers(map);
-      if (shouldRecomputeAnalytics) {
-        setLoadingProgress(20);
-        setLoadingStage('initial');
-        runInitialAnalytics();
-        return;
-      }
-
-      const attr = activeAttribute();
-      const thresholds = colorMode === 'quantile' ? quantileMap[attr] || VALUE_THRESHOLDS : undefined;
-      applyRamp(attr, thresholds);
-      map.once('idle', () => {
-        setScaleVisibility(map, currentScale());
-      });
+      refreshAtlasData(map, shouldRecomputeAnalytics, mode, territory);
     });
 
     return () => {
+      loadRequestRef.current += 1;
+      clearLoadingArtifacts();
       syncCameraState(map);
       map.off('rotate', updateOrientation);
       map.off('pitch', updateOrientation);
+      map.off('move', queueCameraSync);
       map.off('moveend', persistCamera);
       map.off('resize', handleResize);
+      if (cameraAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(cameraAnimationFrameRef.current);
+        cameraAnimationFrameRef.current = null;
+      }
       map.remove();
       mapRef.current = null;
       setMapLoaded(false);
       maplibreAny.removeProtocol?.('pmtiles');
     };
-  }, [mode, basemap, territory]);
+  }, [basemap]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    if (lastModeRef.current === mode && lastTerritoryRef.current === territory) return;
+
+    refreshAtlasData(mapRef.current, true, mode, territory);
+  }, [mapLoaded, mode, territory]);
 
   const handleZoomIn = () => {
     mapRef.current?.zoomIn();
@@ -935,7 +1223,7 @@ export function Map({
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     setScaleVisibility(mapRef.current, scale);
-  }, [mapLoaded, scale]);
+  }, [mapLoaded, scale, mode, attributeStats]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -1009,7 +1297,19 @@ export function Map({
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
+    const queueCursorUpdate = (lng: number, lat: number) => {
+      cursorPositionRef.current = { lng, lat };
+      if (cursorAnimationFrameRef.current !== null) return;
+      cursorAnimationFrameRef.current = requestAnimationFrame(() => {
+        cursorAnimationFrameRef.current = null;
+        setCursorDebug(cursorPositionRef.current);
+      });
+    };
+
     const onMove = (event: any) => {
+      if (event.lngLat) {
+        queueCursorUpdate(event.lngLat.lng, event.lngLat.lat);
+      }
       const layerId = scale === 'segment' ? 'segments-hit-area' : scale === 'carreau200' ? 'carreau200-fill' : 'zones-fill';
       if (!map.getLayer(layerId)) {
         hoverSegmentRef.current(null);
@@ -1027,33 +1327,76 @@ export function Map({
         map.getCanvas().style.cursor = '';
       }
     };
+
+    const onLeave = () => {
+      hoverSegmentRef.current(null);
+      map.getCanvas().style.cursor = '';
+      cursorPositionRef.current = null;
+      if (cursorAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(cursorAnimationFrameRef.current);
+        cursorAnimationFrameRef.current = null;
+      }
+      setCursorDebug(null);
+    };
+
     map.on('mousemove', onMove);
+    map.getCanvas().addEventListener('mouseleave', onLeave);
     return () => {
       map.off('mousemove', onMove);
+      map.getCanvas().removeEventListener('mouseleave', onLeave);
+      if (cursorAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(cursorAnimationFrameRef.current);
+        cursorAnimationFrameRef.current = null;
+      }
     };
-  }, [mapLoaded, scale]);
+  }, [mapLoaded, scale, mode, attributeStats]);
+
+  const formatCoordinate = (value: number) => value.toFixed(5);
+  const formatAngle = (value: number) => value.toFixed(1);
+  const formatZoom = (value: number) => value.toFixed(2);
 
   return (
     <div className="absolute inset-0">
       {isLoading && (
-        <div className="absolute inset-0 z-50 bg-white flex flex-col items-center justify-center">
-          <div className="text-center space-y-5 w-[300px]">
-            <h2 className="text-3xl font-bold text-[#1A1A1A]">{modeConfig.title}</h2>
-            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="absolute left-1/2 z-50 -translate-x-1/2 pointer-events-none" style={{ top: 86 }}>
+          <div
+            className="rounded-2xl border shadow-lg"
+            style={{
+              width: 304,
+              height: 72,
+              padding: '10px 12px',
+              overflow: 'hidden',
+              background: 'rgba(255, 255, 255, 0.7)',
+              borderColor: 'rgba(0, 0, 0, 0.08)'
+            }}
+          >
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#5A5A5A] truncate leading-none">
+                  {modeConfig.title}
+                </div>
+                <div className="text-[10px] text-[#1A1A1A] mt-1 h-[12px] truncate leading-[12px]">
+                  {loadingStage === 'initial' && 'Initialisation'}
+                  {loadingStage === 'tiles' && 'Chargement des données'}
+                  {loadingStage === 'quantiles' && 'Calcul des quantiles'}
+                  {loadingStage === 'distribution' && 'Mise à jour des panneaux'}
+                  {loadingStage === 'done' && 'Prêt'}
+                </div>
+                <div className="text-[10px] text-[#6B6B6B] mt-0.5 h-[12px] truncate leading-[12px]">
+                  {loadingDetail || '\u00A0'}
+                </div>
+              </div>
+              <div className="shrink-0 text-right" style={{ width: 34, paddingTop: 1 }}>
+                <div className="text-[10px] font-medium tabular-nums text-[#4B4B4B] leading-none">
+                  {Math.round(loadingProgress)}%
+                </div>
+              </div>
+            </div>
+            <div className="mt-2.5 w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full transition-all duration-300 ease-out"
-                style={{ width: `${loadingProgress}%`, backgroundColor: '#96C8A6' }}
+                style={{ width: `${loadingProgress}%`, backgroundColor: theme.accent }}
               />
-            </div>
-            <div className="text-xs font-medium tracking-wide text-[#5A5A5A] flex flex-col items-center">
-              <span className="uppercase">
-                {loadingStage === 'initial' && 'Initialisation du style'}
-                {loadingStage === 'tiles' && 'Chargement des tuiles'}
-                {loadingStage === 'quantiles' && 'Calcul des quantiles'}
-                {loadingStage === 'distribution' && 'Construction de la distribution'}
-                {loadingStage === 'done' && 'Prêt'}
-              </span>
-              <span className="mt-1 text-gray-500">{Math.round(loadingProgress)}%</span>
             </div>
           </div>
         </div>
@@ -1135,6 +1478,21 @@ export function Map({
             }}
           />
         </div>
+      </div>
+
+      <div
+        className="absolute z-10 pointer-events-none"
+        style={{
+          right: 16,
+          bottom: 16,
+          color: '#7A7A7A',
+          fontFamily: 'Arial, sans-serif',
+          fontSize: 10,
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap'
+        }}
+      >
+        z {formatZoom(cameraDebug.zoom)} | cursor {cursorDebug ? `${formatCoordinate(cursorDebug.lng)}, ${formatCoordinate(cursorDebug.lat)}` : '-, -'} | cam {formatCoordinate(cameraDebug.center[0])}, {formatCoordinate(cameraDebug.center[1])} | b {formatAngle(cameraDebug.bearing)} | p {formatAngle(cameraDebug.pitch)}
       </div>
     </div>
   );

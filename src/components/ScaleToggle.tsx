@@ -1,5 +1,5 @@
 import { getModeTheme, type AtlasMode, type AtlasScale } from '../config/modes';
-import { Grid3x3, Square, Map } from 'lucide-react';
+import { Route, LayoutGrid, Map } from 'lucide-react';
 
 interface ScaleToggleProps {
   mode: AtlasMode;
@@ -17,10 +17,10 @@ export function ScaleToggle({
   availableZoneTrafic = true
 }: ScaleToggleProps) {
   const theme = getModeTheme(mode);
-  const zoneLabel = 'Infra-communal';
+  const zoneLabel = 'Secteur';
   const zoneTitle = mode === 'bikeability'
-    ? 'Infra-communal - Grand Genève'
-    : 'Infra-communal - données GIREC';
+    ? 'Secteur - Grand Genève'
+    : 'Secteur - données GIREC';
 
   return (
     <div className="bg-white rounded-full flex overflow-hidden" style={{ border: `1px solid ${theme.accentBorder}` }}>
@@ -32,10 +32,10 @@ export function ScaleToggle({
             : 'text-[#5A5A5A] hover:text-[#1A1A1A]'
         }`}
         style={scale === 'segment' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
-        title="Segment - Tronçon de rue"
+        title="Rue - Tronçon de rue"
       >
-        <Grid3x3 className="w-3.5 h-3.5" />
-        <span>Segment</span>
+        <Route className="w-3.5 h-3.5" />
+        <span>Rue</span>
       </button>
       <div className="w-px" style={{ backgroundColor: theme.accentBorder }} />
       <button
@@ -49,10 +49,10 @@ export function ScaleToggle({
               : 'text-[#A0A0A0] cursor-not-allowed'
         }`}
         style={scale === 'carreau200' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
-        title={availableCarreau200 ? 'Carreau 200m - Grille statistique' : 'Carreau 200m - données indisponibles'}
+        title={availableCarreau200 ? 'Quartier - Grille statistique 200 m' : 'Quartier - données indisponibles'}
       >
-        <Square className="w-3.5 h-3.5" />
-        <span>Carreau 200</span>
+        <LayoutGrid className="w-3.5 h-3.5" />
+        <span>Quartier</span>
         {!availableCarreau200 && (
           <span
             className="ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"

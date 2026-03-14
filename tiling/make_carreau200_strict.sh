@@ -3,11 +3,9 @@ set -euo pipefail
 
 # Strict preservation tiling for 200m grid polygons.
 # Strategy:
-#  - Keep source coordinates in EPSG:4326 because tippecanoe expects lon/lat GeoJSON
-#  - Avoid simplification & clipping so shared edges remain aligned across tiles
-#  - Keep a modest buffer to avoid edge artifacts at tile boundaries
-#  - Disable tiny polygon reduction
-#  - Use explicit min/max zoom suited for 200m cells
+#  - Keep source geometry intact across zoom levels
+#  - Avoid clipping and simplification so shared edges remain aligned
+#  - Allow larger tiles because the user explicitly prefers fidelity over size
 
 ROOT_DIR="$(cd "$(dirname "$0")" && cd .. && pwd)"
 OUT_DIR="$ROOT_DIR/data_tiles"
@@ -19,6 +17,9 @@ NDJSON="${NDJSON:-$TMP_DIR/carreau200_strict.ndjson}"
 MBTILES="${MBTILES:-$OUT_DIR/carreau200_strict.mbtiles}"
 PMTILES="${PMTILES:-$PUB_TILES_DIR/carreau200.pmtiles}"
 TILE_LABEL="${TILE_LABEL:-carreau200}"
+MINZOOM="${MINZOOM:-8}"
+MAXZOOM="${MAXZOOM:-15}"
+BUFFER="${BUFFER:-4}"
 
 mkdir -p "$OUT_DIR" "$TMP_DIR" "$PUB_TILES_DIR"
 
@@ -36,27 +37,20 @@ ogr2ogr -f GeoJSONSeq "$NDJSON" "$INPUT"
 
 echo "➡️  tippecanoe strict tiling ($TILE_LABEL)"
 rm -f "$MBTILES"
-# Notes:
-#  --no-simplification avoids geometry alteration
-#  --no-clipping keeps full polygons (can increase tile size)
-#  --buffer preserves edge continuity for rendering
-#  --no-tiny-polygon-reduction ensures small cells kept
-#  -Z8: cells appear at mid zoom; -z15: allow inspection detail
-#  --no-feature-limit / --no-tile-size-limit allow larger tiles due to no clipping
-#  --drop-densest-as-needed fallback if something extreme occurs
 
 TIPPECANOE_FLAGS=(
   -o "$MBTILES" "$NDJSON"
   -l "$LAYER"
-  -Z8 -z15
+  -Z"$MINZOOM" -z"$MAXZOOM"
   --no-feature-limit
   --no-tile-size-limit
   --no-simplification
   --no-clipping
   --no-line-simplification
+  --detect-shared-borders
   --no-tiny-polygon-reduction
-  --buffer=4
-  --drop-densest-as-needed
+  --buffer="$BUFFER"
+  --no-tile-stats
 )
 
 tippecanoe "${TIPPECANOE_FLAGS[@]}"
