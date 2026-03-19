@@ -54,6 +54,9 @@ export function AttributePanel({
   const [hoveredClass, setHoveredClass] = useState<string | null>(null);
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
+  const FAVORABLE_COLOR = '#22c55e';
+  const UNFAVORABLE_COLOR = '#ef4444';
+  const useFavorableBars = mode === 'bikeability' || mode === 'walkability';
   const orderedClasses = modeConfig.classOrder
     .map((className) => {
       const classInfo = attributeData[className];
@@ -62,7 +65,7 @@ export function AttributePanel({
     .filter((entry): entry is readonly [string, AtlasClassScore] => entry !== null);
   
   return (
-    <div className="absolute right-0 top-0 bottom-0 z-20 w-[300px] pointer-events-none">
+    <div className="hidden sm:block absolute right-0 top-0 bottom-0 z-20 w-[300px] pointer-events-none">
       <div className="h-full flex flex-col p-4 pt-20 pointer-events-auto">
         <div
           className="backdrop-blur-sm rounded-2xl overflow-hidden shadow-lg max-h-full flex flex-col"
@@ -177,6 +180,10 @@ export function AttributePanel({
                             const attrKey = `${className}.${attr.technicalName}`;
                             const isAttrSelected = selectedAttribute === attrKey;
                             const isOtherAttrSelected = hasSelection && !isAttrSelected;
+                            const isFavorable = attr.favorable ?? classInfo.favorable;
+                            const barColor = useFavorableBars
+                              ? (isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR)
+                              : getPaletteColor(attr.value);
                             
                             return (
                               <div 
@@ -215,7 +222,7 @@ export function AttributePanel({
                                       animate={{ width: `${attr.value * 100}%` }}
                                       transition={{ duration: 0.4, delay: index * 0.03 }}
                                       className="absolute inset-y-0 left-0 rounded-full"
-                                      style={{ backgroundColor: getPaletteColor(attr.value) }}
+                                      style={{ backgroundColor: barColor }}
                                     />
                                   </div>
                                 </div>

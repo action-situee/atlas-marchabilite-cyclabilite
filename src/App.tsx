@@ -28,6 +28,10 @@ const MODE_PATHS: Record<AtlasMode, string> = {
   bikeability: '/cyclabilite'
 };
 const DEFAULT_SCALE: AtlasScale = 'segment';
+const DEFAULT_TERRITORY_BY_MODE: Record<AtlasMode, AnalysisTerritory> = {
+  walkability: 'cantonGeneve',
+  bikeability: 'grandGeneve'
+};
 
 const getModeFromHash = (hash: string): AtlasMode | null => {
   const normalizedHash = hash.toLowerCase();
@@ -68,7 +72,7 @@ export default function App() {
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [mode, setMode] = useState<AtlasMode>(() => getModeFromLocation(window.location));
-  const [territory, setTerritory] = useState<AnalysisTerritory>('cantonGeneve');
+  const [territory, setTerritory] = useState<AnalysisTerritory>(() => DEFAULT_TERRITORY_BY_MODE[getModeFromLocation(window.location)]);
   const [scale, setScale] = useState<AtlasScale>(DEFAULT_SCALE);
   const [attributeData, setAttributeData] = useState<AtlasScores>(() => buildEmptyScores(getModeFromLocation(window.location)));
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
@@ -150,6 +154,7 @@ export default function App() {
   const handleModeChange = (nextMode: AtlasMode) => {
     if (nextMode === mode) return;
     setMode(nextMode);
+    setTerritory(DEFAULT_TERRITORY_BY_MODE[nextMode]);
     setScale(DEFAULT_SCALE);
     syncModeHash(nextMode);
   };
@@ -162,6 +167,7 @@ export default function App() {
     const syncModeFromUrl = () => {
       const nextMode = getModeFromLocation(window.location);
       setMode(nextMode);
+      setTerritory(DEFAULT_TERRITORY_BY_MODE[nextMode]);
       setScale(DEFAULT_SCALE);
     };
 

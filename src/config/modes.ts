@@ -5,6 +5,7 @@ export type AnalysisTerritory = 'grandGeneve' | 'cantonGeneve';
 export interface AtlasAttributeDefinition {
   name: string;
   technicalName: string;
+  favorable?: boolean;
 }
 
 export interface AtlasAttributeScore extends AtlasAttributeDefinition {
@@ -106,10 +107,14 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Est-ce commode de marcher ici ?',
     field: 'Classe_Commodité',
     attributes: [
-      { name: 'Niveau sonore', technicalName: 'bruit' },
-      { name: 'Température', technicalName: 'temperature' },
-      { name: "Conflits d'usage", technicalName: 'conflit_usage' },
-      { name: 'Couverture végétale', technicalName: 'canopee' }
+      { name: 'Niveau sonore', technicalName: 'bruit', favorable: false },
+      { name: 'Température', technicalName: 'temperature', favorable: false },
+      { name: "Conflits d'usage", technicalName: 'conflit_usage', favorable: false },
+      { name: 'Conflits modes doux', technicalName: 'conflit_md', favorable: false },
+      { name: "Qualité de l'air", technicalName: 'air', favorable: false },
+      { name: 'Temps d’attente', technicalName: 'attente', favorable: false },
+      { name: 'Charge', technicalName: 'charge', favorable: false },
+      { name: 'Couverture végétale', technicalName: 'canopee', favorable: true }
     ]
   },
   {
@@ -119,12 +124,14 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Y a-t-il des raisons de venir ici ?',
     field: 'Classe_Attractivité',
     attributes: [
-      { name: "Plans d'eau", technicalName: 'lac_cours_deau' },
-      { name: 'Fontaines', technicalName: 'fontaines' },
-      { name: 'Espaces ouverts', technicalName: 'espaces_ouverts' },
-      { name: 'Commerces actifs', technicalName: 'rez_actif' },
-      { name: 'Transports publics', technicalName: 'tp' },
-      { name: 'Aménités', technicalName: 'amenite' }
+      { name: "Plans d'eau", technicalName: 'lac_cours_deau', favorable: true },
+      { name: 'Fontaines', technicalName: 'fontaines', favorable: true },
+      { name: 'Espaces ouverts', technicalName: 'espaces_ouverts', favorable: true },
+      { name: 'Commerces actifs', technicalName: 'rez_actif', favorable: true },
+      { name: 'Transports publics', technicalName: 'tp', favorable: true },
+      { name: 'Aménités', technicalName: 'amenite', favorable: true },
+      { name: 'Bancs', technicalName: 'banc', favorable: true },
+      { name: 'Toilettes', technicalName: 'toilette', favorable: true }
     ]
   },
   {
@@ -134,11 +141,11 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Est-ce possible de marcher ici ?',
     field: 'Classe_Infrastructure',
     attributes: [
-      { name: 'Connectivité réseau', technicalName: 'connectivite' },
-      { name: 'Largeur trottoir', technicalName: 'largeur_trottoir' },
-      { name: 'Revêtement', technicalName: 'chemin' },
-      { name: 'Stationnement gênant', technicalName: 'stationnement_genant' },
-      { name: 'Pente', technicalName: 'topographie' }
+      { name: 'Connectivité réseau', technicalName: 'connectivite', favorable: true },
+      { name: 'Largeur trottoir', technicalName: 'largeur_trottoir', favorable: true },
+      { name: 'Revêtement', technicalName: 'chemin', favorable: true },
+      { name: 'Stationnement gênant', technicalName: 'stationnement_genant', favorable: false },
+      { name: 'Pente', technicalName: 'topographie', favorable: false }
     ]
   },
   {
@@ -148,10 +155,12 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Puis-je marcher ici en sécurité ?',
     field: 'Classe_Sécurité',
     attributes: [
-      { name: 'Historique accidents', technicalName: 'accident' },
-      { name: 'Zone apaisée', technicalName: 'zone_apaisee' },
-      { name: 'Zone piétonne', technicalName: 'zone_pietonne' },
-      { name: 'Limite de vitesse', technicalName: 'vitesse' }
+      { name: 'Historique accidents', technicalName: 'accident', favorable: false },
+      { name: 'Charge', technicalName: 'charge', favorable: false },
+      { name: 'Zone apaisée', technicalName: 'zone_apaisee', favorable: true },
+      { name: 'Zone piétonne', technicalName: 'zone_pietonne', favorable: true },
+      { name: 'Limite de vitesse', technicalName: 'vitesse', favorable: false },
+      { name: 'Éclairage', technicalName: 'eclairage', favorable: true }
     ]
   }
 ];
@@ -164,9 +173,9 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Le réseau donne-t-il envie de circuler à vélo ?',
     field: 'Classe_attractivite',
     attributes: [
-      { name: 'Aménités', technicalName: 'amenite' },
-      { name: 'Connectivité', technicalName: 'connectivite' },
-      { name: 'Pente', technicalName: 'pente' }
+      { name: 'Aménités', technicalName: 'amenite', favorable: true },
+      { name: 'Connectivité', technicalName: 'connectivite', favorable: true },
+      { name: 'Pente', technicalName: 'pente', favorable: false }
     ]
   },
   {
@@ -176,11 +185,11 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Le trajet est-il confortable à vélo ?',
     field: 'Classe_confort',
     attributes: [
-      { name: 'Eau', technicalName: 'eau' },
-      { name: 'Température', technicalName: 'temperature' },
-      { name: "Qualité de l'air", technicalName: 'air' },
-      { name: 'Alentours', technicalName: 'alentours' },
-      { name: 'Canopée', technicalName: 'canopee' }
+      { name: 'Eau', technicalName: 'eau', favorable: true },
+      { name: 'Température', technicalName: 'temperature', favorable: false },
+      { name: "Qualité de l'air", technicalName: 'air', favorable: true },
+      { name: 'Alentours', technicalName: 'alentours', favorable: true },
+      { name: 'Canopée', technicalName: 'canopee', favorable: true }
     ]
   },
   {
@@ -190,12 +199,12 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Les services utiles aux cyclistes sont-ils présents ?',
     field: 'Classe_equipement',
     attributes: [
-      { name: 'Stationnement vélo', technicalName: 'stationnement_velo' },
-      { name: 'Borne de réparation', technicalName: 'borne_reparation' },
-      { name: 'Location', technicalName: 'location' },
-      { name: 'Sens inverse cyclable', technicalName: 'sens_inverse' },
-      { name: 'Services vélo', technicalName: 'service_velo' },
-      { name: 'Parking abri', technicalName: 'parking_abris' }
+      { name: 'Stationnement vélo', technicalName: 'stationnement_velo', favorable: true },
+      { name: 'Borne de réparation', technicalName: 'borne_reparation', favorable: true },
+      { name: 'Location', technicalName: 'location', favorable: true },
+      { name: 'Sens inverse cyclable', technicalName: 'sens_inverse', favorable: true },
+      { name: 'Services vélo', technicalName: 'service_velo', favorable: true },
+      { name: 'Parking abri', technicalName: 'parking_abris', favorable: true }
     ]
   },
   {
@@ -205,11 +214,11 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     description: "L'aménagement cyclable est-il qualitatif ?",
     field: 'Classe_infrastructure',
     attributes: [
-      { name: 'Piste cyclable', technicalName: 'piste' },
-      { name: 'Bande cyclable', technicalName: 'bande' },
-      { name: 'Revêtement', technicalName: 'revetement' },
-      { name: 'Giratoire', technicalName: 'giratoire' },
-      { name: 'Tourner à droite', technicalName: 'tourner_droite' }
+      { name: 'Piste cyclable', technicalName: 'piste', favorable: true },
+      { name: 'Bande cyclable', technicalName: 'bande', favorable: true },
+      { name: 'Revêtement', technicalName: 'revetement', favorable: true },
+      { name: 'Giratoire', technicalName: 'giratoire', favorable: false },
+      { name: 'Tourner à droite', technicalName: 'tourner_droite', favorable: true }
     ]
   },
   {
@@ -219,11 +228,11 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Puis-je circuler à vélo en sécurité ?',
     field: 'Classe_securite',
     attributes: [
-      { name: 'Éclairage', technicalName: 'eclairage' },
-      { name: 'Zone apaisée', technicalName: 'zone_apaisee' },
-      { name: 'Vitesse motorisée', technicalName: 'vitesse_motorisee' },
-      { name: 'Conflits modes doux', technicalName: 'conflit_md' },
-      { name: 'Historique accidents', technicalName: 'accident' }
+      { name: 'Éclairage', technicalName: 'eclairage', favorable: true },
+      { name: 'Zone apaisée', technicalName: 'zone_apaisee', favorable: true },
+      { name: 'Vitesse motorisée', technicalName: 'vitesse_motorisee', favorable: false },
+      { name: 'Conflits modes doux', technicalName: 'conflit_md', favorable: false },
+      { name: 'Historique accidents', technicalName: 'accident', favorable: false }
     ]
   }
 ];
