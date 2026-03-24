@@ -29,7 +29,7 @@ const MODE_PATHS: Record<AtlasMode, string> = {
 };
 const DEFAULT_SCALE: AtlasScale = 'segment';
 const DEFAULT_TERRITORY_BY_MODE: Record<AtlasMode, AnalysisTerritory> = {
-  walkability: 'cantonGeneve',
+  walkability: 'grandGeneve',
   bikeability: 'grandGeneve'
 };
 
@@ -242,7 +242,7 @@ export default function App() {
               availableZoneTrafic={hasZoneTrafic}
             />
 
-            <TerritoryToggle mode={mode} territory={territory} onTerritoryChange={setTerritory} disabled />
+            <TerritoryToggle mode={mode} territory={territory} onTerritoryChange={setTerritory} />
 
             {/* Color Mode Toggle moved to Attribute Panel */}
             

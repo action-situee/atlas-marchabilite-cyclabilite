@@ -241,7 +241,7 @@ export const MODE_CONFIGS: Record<AtlasMode, AtlasModeConfig> = {
   walkability: {
     id: 'walkability',
     title: 'Marchabilité',
-    indexField: 'indice_marchabilite',
+    indexField: 'walk_index',
     theme: WALKABILITY_THEME,
     classOrder: WALKABILITY_CLASSES.map((classDef) => classDef.displayName),
     classes: WALKABILITY_CLASSES,

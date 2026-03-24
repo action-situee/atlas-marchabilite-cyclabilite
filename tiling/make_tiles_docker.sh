@@ -127,7 +127,7 @@ build_carreau_tiles() {
 
 WALK_GG_SEG_INPUT="$(resolve_input "walkability/AggloGG/step3_index.parquet" "walkability/step3_index.parquet" || true)"
 WALK_GG_CAR_INPUT="$(resolve_input "walkability/AggloGG/step3_aggregated_index_carreau200.parquet" "walkability/step3_aggregated_index_carreau200.parquet" || true)"
-WALK_GG_ZT_INPUT="$(resolve_input "walkability/AggloGG/step3_aggregated_index_girec.parquet" "walkability/step3_aggregated_index_girec.parquet" || true)"
+WALK_GG_ZT_INPUT="$(resolve_input "walkability/AggloGG/step3_aggregated_index_gg_infra_communal.parquet" "walkability/AggloGG/step3_aggregated_index_girec.parquet" || true)"
 WALK_CANTON_SEG_INPUT="$(resolve_input "walkability/CantonGE/step3_index.parquet" || true)"
 WALK_CANTON_CAR_INPUT="$(resolve_input "walkability/CantonGE/step3_aggregated_index_carreau200.parquet" || true)"
 WALK_CANTON_ZT_INPUT="$(resolve_input "walkability/CantonGE/step3_aggregated_index_girec.parquet" || true)"

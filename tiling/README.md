@@ -22,7 +22,7 @@ Place your raw data in `data_raw/`. Current defaults expect:
 - Walkability:
   - `data_raw/walkability/AggloGG/step3_index.parquet`
   - `data_raw/walkability/AggloGG/step3_aggregated_index_carreau200.parquet`
-  - `data_raw/walkability/AggloGG/step3_aggregated_index_girec.parquet`
+  - `data_raw/walkability/AggloGG/step3_aggregated_index_gg_infra_communal.parquet`
   - `data_raw/walkability/CantonGE/step3_index.parquet`
   - `data_raw/walkability/CantonGE/step3_aggregated_index_carreau200.parquet`
   - `data_raw/walkability/CantonGE/step3_aggregated_index_girec.parquet`
@@ -34,7 +34,7 @@ Place your raw data in `data_raw/`. Current defaults expect:
   - `data_raw/cyclability/CantonGE/step3_aggregated_index_carreau200.parquet`
   - `data_raw/cyclability/CantonGE/step3_aggregated_index_gg_infra_communal.parquet`
 
-Legacy root-level walkability files in `data_raw/` are still accepted as fallback.
+For walkability AggloGG infracommunal, `step3_aggregated_index_gg_infra_communal.parquet` is preferred and `step3_aggregated_index_girec.parquet` is only kept as a fallback.
 
 You can add more datasets later; see notes below.
 

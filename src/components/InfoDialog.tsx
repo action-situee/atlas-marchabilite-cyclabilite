@@ -24,25 +24,26 @@ const INFO_CONTENT: Record<
   walkability: {
     subtitle: 'Lecture territoriale de la qualité des déplacements à pied',
     about:
-      "Cette carte interactive de marchabilité a été développée en 2025 par le Bureau Action Située pour le Canton de Genève, en collaboration avec l’Office cantonal des transports, l’Office de l’urbanisme et le Département du projet d’agglomération. Elle propose un outil d’aide à la décision fondé sur un indice cartographique, multiscalaire et multifactoriel, construit à partir de données existantes, principalement OSM et SITG, complétées par un travail qualitatif, des avis d’expert·es et des observations de terrain.\n\nL’indice estime dans quelle mesure un segment de rue, une maille de 200 m ou un secteur offre des conditions favorables à la marche. Il permet d’identifier les continuités confortables, les ruptures, les manques d’aménités et les secteurs où le confort ou la sécurité piétonne peuvent être renforcés, à l’échelle du canton de Genève comme du Grand Genève.",
+      "Développée par le Bureau Action Située pour le Canton de Genève, cette carte interactive propose un indice de marchabilité pour aider au diagnostic et à la planification des mobilités actives. L’outil permet d’identifier les continuités favorables à la marche, les ruptures de parcours et les secteurs où le confort ou la sécurité piétonne peuvent être renforcés, à l’échelle de la rue, du quartier ou du secteur. ",
     methodology:
-      "L’indice repose sur un réseau marchable spécifiquement constitué à partir de données géographiques existantes, puis consolidé et nettoyé. Une revue de littérature et un travail de sélection avec des expert·es ont permis de retenir une vingtaine d’attributs organisés en quatre classes complémentaires : Commodité, Attractivité, Infrastructure et Sécurité.\n\nChaque attribut est normalisé entre 0 et 1, puis agrégé au sein de sa classe avant de contribuer au score global, lui aussi compris entre 0 et 1. La lecture peut se faire à plusieurs échelles territoriales, du segment de rue au carreau de 200 m, jusqu’aux secteurs infra-communaux, sur Genève et à l’échelle du Grand Genève selon les périmètres disponibles.",
+      "L’indice repose sur un réseau marchable construit à partir de données existantes, principalement OSM et SITG, puis nettoyé et segmenté. Les attributs retenus ont été sélectionnés à partir d’une revue de littérature et d’un travail avec des expert·es, puis organisés en quatre classes : attractivité, commodité, infrastructure et sécurité. Chaque attribut est normalisé, pondéré puis agrégé pour produire un score compris entre 0 et 1.",
     limits:
-      "L’indice n’a pas vocation à remplacer un diagnostic de terrain. Il ne restitue pas entièrement les ressentis, les variations selon les heures, les obstacles temporaires, ni certains effets très localisés comme l’encombrement, l’ambiance nocturne ou la perception sociale des lieux.",
+      "L’indice constitue un diagnostic opérationnel, mais ne remplace pas une observation de terrain. Il ne restitue pas pleinement les ambiances, les variations temporelles, les obstacles temporaires ou certaines dimensions sensibles comme le sentiment d’insécurité, l’encombrement ou la perception sociale des lieux.",
     usage:
-      "Survolez un objet sur la carte pour afficher son profil détaillé. Le radar synthétise les classes, la colonne latérale détaille les attributs, et la légende permet de passer d’une lecture linéaire à une lecture en quantiles selon le besoin d’analyse. Les menus permettent également de changer d’échelle de visualisation et d’explorer les différents territoires.",
+      "Survolez un objet pour afficher son profil détaillé. Le radar synthétise les classes, le panneau latéral détaille les attributs, et les menus permettent de changer d’échelle d’analyse et de territoire.",
     partners: [{ name: 'GENF', src: GENF_LOGO_URL }]
   },
+
   bikeability: {
     subtitle: 'Lecture territoriale de la qualité des déplacements à vélo',
     about:
-      "Cette carte interactive de cyclabilité a été développée en 2025 par le Bureau Action Située pour le Canton de Genève, en collaboration avec l’Office cantonal des transports, l’Office de l’urbanisme et le Département du projet d’agglomération. Elle propose un outil d’aide à la décision fondé sur un indice cartographique, multiscalaire et multifactoriel, construit à partir de données existantes, principalement OSM et SITG, complétées par un travail qualitatif, des avis d’expert·es et des observations de terrain.\n\nL’indice estime dans quelle mesure un segment de rue, une maille de 200 m ou un secteur offre des conditions favorables à la pratique du vélo. Il permet d’identifier les continuités attractives, les ruptures d’itinéraire, les manques d’équipements, les secteurs exposés (trafic, conflits, risques) et les endroits où le confort ou la sécurité cyclable peuvent être renforcés, à l’échelle du canton de Genève comme du Grand Genève.",
+      "Développée par le Bureau Action Située pour le Canton de Genève, cette carte interactive propose un indice de cyclabilité pour aider au diagnostic et à la planification des mobilités actives. L’outil permet d’identifier les continuités favorables au vélo, les ruptures d’itinéraire et les secteurs où le confort ou la sécurité cyclable peuvent être renforcés, à l’échelle de la rue, du quartier ou du secteur.",
     methodology:
-      "L’indice repose sur un réseau cyclable constitué à partir de données géographiques existantes, puis consolidé et nettoyé. Une revue de littérature et un travail de sélection avec des expert·es ont permis de retenir une série d’attributs organisés en cinq classes complémentaires : Attractivité, Confort, Équipement, Infrastructure et Sécurité.\n\nChaque attribut est normalisé entre 0 et 1, puis agrégé au sein de sa classe avant de contribuer au score global, lui aussi compris entre 0 et 1. La lecture peut se faire à plusieurs échelles territoriales, du segment de rue au carreau de 200 m, jusqu’aux secteurs infra-communaux, sur Genève et à l’échelle du Grand Genève selon les périmètres disponibles.",
+      "L’indice repose sur un réseau cyclable construit à partir de données existantes, principalement OSM et SITG, puis nettoyé et structuré. Les attributs retenus ont été sélectionnés à partir de la littérature et d’un travail avec des expert·es, puis organisés en cinq classes : attractivité, confort, équipement, infrastructure et sécurité. Chaque attribut est normalisé, pondéré puis agrégé pour produire un score compris entre 0 et 1.",
     limits:
-      "L’indice n’a pas vocation à remplacer un diagnostic de terrain. Il ne restitue pas entièrement les ressentis, les variations selon les heures (trafic, vitesse pratiquée, mixité des usages), les obstacles temporaires, ni certains effets très localisés comme le stress aux intersections, les détours induits ou la qualité perçue des continuités cyclables.",
+      "L’indice constitue un diagnostic opérationnel, mais ne remplace pas une observation de terrain. Il ne restitue pas pleinement les variations de trafic selon les heures, les obstacles temporaires, les conflits d’usage ou certaines dimensions sensibles comme le stress ressenti aux intersections et la qualité perçue des continuités cyclables.",
     usage:
-      "Survolez un objet sur la carte pour afficher son profil détaillé. Le radar synthétise les classes, la colonne latérale détaille les attributs, et la légende permet de passer d’une lecture linéaire à une lecture en quantiles selon le besoin d’analyse. Les menus permettent également de changer d’échelle de visualisation et d’explorer les différents territoires.",
+      "Survolez un objet pour afficher son profil détaillé. Le radar synthétise les classes, le panneau latéral détaille les attributs, et les menus permettent de changer d’échelle d’analyse et de territoire.",
     partners: [
       { name: 'GENF', src: GENF_LOGO_URL },
       { name: 'Modus', src: MODUS_LOGO_URL }
@@ -64,8 +65,13 @@ export function InfoDialog({ open, onOpenChange, mode }: InfoDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] overflow-hidden rounded-2xl sm:w-[70vw] sm:max-w-[32rem]"
-        style={{ backgroundColor: theme.panelBackground, border: `1px solid ${theme.accentBorder}` }}
+        className="flex w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl sm:w-[70vw] sm:max-w-[32rem]"
+        style={{
+          backgroundColor: theme.panelBackground,
+          border: `1px solid ${theme.accentBorder}`,
+          height: 'min(42rem, calc(100vh - 2rem))',
+          maxHeight: 'calc(100vh - 2rem)'
+        }}
       >
         <DialogHeader>
           <DialogTitle className="text-[#1A1A1A] text-lg" style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -76,7 +82,10 @@ export function InfoDialog({ open, onOpenChange, mode }: InfoDialogProps) {
           </DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4 overflow-y-auto pr-1 text-[#1A1A1A] text-sm" style={{ fontFamily: 'Arial, sans-serif' }}>
+        <div
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2 text-[#1A1A1A] text-sm"
+          style={{ fontFamily: 'Arial, sans-serif', overscrollBehavior: 'contain' }}
+        >
           <div>
             <h3 className="text-[#1A1A1A] mb-2 text-xs uppercase tracking-wider" style={{ fontFamily: 'Arial, sans-serif' }}>À propos</h3>
             <p className="text-[#5A5A5A] text-xs leading-relaxed">
