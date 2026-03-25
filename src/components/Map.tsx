@@ -118,6 +118,7 @@ export function Map({
   const loadingTimeoutRef = useRef<number | null>(null);
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
+  const previousRequestedScaleRef = useRef<AtlasScale>(scale);
   const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
@@ -724,14 +725,19 @@ export function Map({
     map: any,
     nextScale: AtlasScale,
     currentMode: AtlasMode = mode,
-    currentTerritory: AnalysisTerritory = territory
+    currentTerritory: AnalysisTerritory = territory,
+    preferRequestedScale = false
   ) => {
     const setVisibility = (layerId: string, visible: boolean) => {
       if (!map.getLayer(layerId)) return;
       map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
     };
 
-    const hybridSegmentScale = nextScale === 'segment' && hasCarreau200Source(currentMode, currentTerritory) && map.getLayer('carreau200-fill');
+    const hybridSegmentScale =
+      !preferRequestedScale &&
+      nextScale === 'segment' &&
+      hasCarreau200Source(currentMode, currentTerritory) &&
+      map.getLayer('carreau200-fill');
     const currentZoom = map.getZoom();
     const showHybridCarreau = Boolean(hybridSegmentScale) && currentZoom <= SCALE_BLEND_END;
 
@@ -783,13 +789,14 @@ export function Map({
     map: any,
     requestedScale: AtlasScale = scaleRef.current,
     currentMode: AtlasMode = mode,
-    currentTerritory: AnalysisTerritory = territory
+    currentTerritory: AnalysisTerritory = territory,
+    preferRequestedScale = false
   ) => {
     const previousDisplayScale = displayScaleRef.current;
     const nextDisplayScale = getScaleForZoom(map.getZoom(), requestedScale, currentMode, currentTerritory);
 
     displayScaleRef.current = nextDisplayScale;
-    applyScaleVisibility(map, requestedScale, currentMode, currentTerritory);
+    applyScaleVisibility(map, requestedScale, currentMode, currentTerritory, preferRequestedScale);
 
     if (previousDisplayScale !== nextDisplayScale) {
       hoverSegmentRef.current(null);
@@ -1700,7 +1707,7 @@ export function Map({
   // Update layer visibility based on scale
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
-    applyScaleVisibility(mapRef.current, scale);
+    applyScaleVisibility(mapRef.current, scale, mode, territory, true);
     reorderMapLayers(mapRef.current, mode, scale);
   }, [mapLoaded, scale, mode, territory, attributeStats]);
 
@@ -1709,6 +1716,27 @@ export function Map({
     displayScaleRef.current = scale;
     hoverSegmentRef.current(null);
   }, [scale]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) {
+      previousRequestedScaleRef.current = scale;
+      return;
+    }
+
+    const previousScale = previousRequestedScaleRef.current;
+    previousRequestedScaleRef.current = scale;
+
+    if (mode !== 'bikeability' || scale !== 'segment' || previousScale === 'segment') return;
+
+    const map = mapRef.current;
+    const minimumSegmentZoom = SCALE_BLEND_END + 0.15;
+    if (map.getZoom() >= minimumSegmentZoom) return;
+
+    map.easeTo({
+      zoom: minimumSegmentZoom,
+      duration: 350
+    });
+  }, [mapLoaded, mode, scale]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -1728,7 +1756,7 @@ export function Map({
       }
     });
 
-    syncScaleFromMapZoom(map, scale, mode, territory);
+    syncScaleFromMapZoom(map, scale, mode, territory, true);
     if (sourceIds.every((sourceId) => map.getSource(sourceId)) && areTrackedSourcesLoaded()) return;
 
     const requestId = ++loadRequestRef.current;
