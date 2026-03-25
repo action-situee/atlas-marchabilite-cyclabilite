@@ -4,6 +4,8 @@ import { Box, Compass, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
+import faisceauGaillardGeoJsonUrl from '../../data_raw/perimeter/f3_perimetre_arrondi.geojson?url';
+import faisceauStJulienGeoJsonUrl from '../../data_raw/perimeter/f4_perimetre_arrondi.geojson?url';
 import type { DistributionData } from './DistributionChart';
 import { computeStats, type DataStats } from '../utils/normalize';
 import {
@@ -54,11 +56,14 @@ const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.sw
 const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
 const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
 const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
+const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data_raw/perimeter/f3_perimetre_arrondi.geojson';
+const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data_raw/perimeter/f4_perimetre_arrondi.geojson';
 const SCALE_BLEND_START = 10.7;
 const SCALE_BLEND_END = 11.2;
 const LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin|airport|airfield|aerodrome|aeroway/i;
 const PLACE_LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin/i;
 const WATER_LAYER_PATTERN = /water|lake|ocean|river|canal|stream|reservoir/i;
+const TRANSPORT_LAYER_PATTERN = /road|street|highway|motorway|trunk|primary|secondary|tertiary|rail|railway/i;
 
 interface MapProps {
   selectedAttribute: string | null;
@@ -97,6 +102,7 @@ export function Map({
   const distributionRequestRef = useRef(onDistributionRequest);
   const showLabelsRef = useRef(false);
   const showPerimeterRef = useRef(false);
+  const showCorridorMaskOverviewRef = useRef(false);
   const cameraStateRef = useRef<CameraState>({
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
@@ -112,6 +118,7 @@ export function Map({
   const loadingTimeoutRef = useRef<number | null>(null);
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
+  const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
@@ -131,6 +138,7 @@ export function Map({
   const [basemap, setBasemap] = useState<BasemapMode>('voyager');
   const [showLabels, setShowLabels] = useState(false);
   const [showPerimeter, setShowPerimeter] = useState(true);
+  const [showCorridorMaskOverview, setShowCorridorMaskOverview] = useState(true);
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
   const [pitch, setPitch] = useState(DEFAULT_PITCH);
   const [labelsAvailable, setLabelsAvailable] = useState(true);
@@ -142,6 +150,7 @@ export function Map({
   distributionRequestRef.current = onDistributionRequest;
   showLabelsRef.current = showLabels;
   showPerimeterRef.current = showPerimeter;
+  showCorridorMaskOverviewRef.current = showCorridorMaskOverview;
 
   const normalizePmtilesUrl = (url: string) => {
     if (!url) return '';
@@ -252,6 +261,13 @@ export function Map({
       url: tilejsonUrl || normalizePmtilesUrl(pmtilesUrl),
       sourceLayer: env.VITE_PERIMETER_SOURCE_LAYER || DEFAULT_PERIMETER_SOURCE_LAYER
     };
+  };
+
+  const resolveFaisceauGeoJsonUrl = (envKey: 'VITE_FAISCEAU_GAILLARD_GEOJSON_URL' | 'VITE_FAISCEAU_STJULIEN_GEOJSON_URL') => {
+    if (envKey === 'VITE_FAISCEAU_GAILLARD_GEOJSON_URL') {
+      return env[envKey] || DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL;
+    }
+    return env[envKey] || DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL;
   };
 
   const toNumeric = (value: unknown): number | null => {
@@ -411,6 +427,293 @@ export function Map({
   const moveWaterLayersAboveAtlas = (map: any) => {
     const waterLayerIds = getWaterLayerIds(map);
     for (const layerId of waterLayerIds) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
+  };
+
+  const getTransportLayerIds = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    return layers
+      .filter((layer: any) => {
+        if (layer.type !== 'line') return false;
+        const layerId = String(layer.id || '');
+        const sourceLayer = String(layer['source-layer'] || '');
+        return TRANSPORT_LAYER_PATTERN.test(layerId) || TRANSPORT_LAYER_PATTERN.test(sourceLayer);
+      })
+      .map((layer: any) => layer.id)
+      .filter((layerId: string) => !layerId.startsWith('corridor') && !layerId.startsWith('perimeter') && !layerId.startsWith('segments') && !layerId.startsWith('carreau200') && !layerId.startsWith('zones-'));
+  };
+
+  const getAtlasLayerIds = () => [
+    'zones-fill',
+    'zones-outline',
+    'carreau200-fill',
+    'carreau200-outline',
+    'segments-layer',
+    'segments-hit-area'
+  ];
+
+  const setCorridorMaskOverviewVisibility = (
+    map: any,
+    visible: boolean,
+    currentMode: AtlasMode = mode
+  ) => {
+    const nextVisibility = currentMode === 'bikeability' && visible ? 'visible' : 'none';
+    for (const layerId of ['corridor-mask-overview-fill']) {
+      if (!map.getLayer(layerId)) continue;
+      map.setLayoutProperty(layerId, 'visibility', nextVisibility);
+    }
+    map.triggerRepaint();
+  };
+
+  const setCorridorsOverviewVisibility = (
+    map: any,
+    visible: boolean,
+    currentMode: AtlasMode = mode
+  ) => {
+    const nextVisibility = currentMode === 'bikeability' && visible ? 'visible' : 'none';
+    for (const layerId of ['corridors-overview-hit-area', 'corridors-overview-halo', 'corridors-overview-outline']) {
+      if (!map.getLayer(layerId)) continue;
+      map.setLayoutProperty(layerId, 'visibility', nextVisibility);
+    }
+    map.triggerRepaint();
+  };
+
+  const extractOuterRings = (geometry: any): number[][][] => {
+    if (!geometry?.type || !geometry?.coordinates) return [];
+    if (geometry.type === 'Polygon') {
+      return geometry.coordinates[0] ? [geometry.coordinates[0]] : [];
+    }
+    if (geometry.type === 'MultiPolygon') {
+      return geometry.coordinates.map((polygon: any) => polygon[0]).filter(Boolean);
+    }
+    return [];
+  };
+
+  const buildOverviewCorridorsGeoJson = (gaillardData: any, stJulienData: any) => ({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {
+          id: 'thonex_gaillard',
+          nom: 'Gaillard - Thonex - Eaux-Vives',
+          color: '#2E6A4A'
+        },
+        geometry: gaillardData.features?.[0]?.geometry || null
+      },
+      {
+        type: 'Feature',
+        properties: {
+          id: 'plo_stjulien',
+          nom: 'Saint-Julien - PLO - Carouge',
+          color: '#2E6A4A'
+        },
+        geometry: stJulienData.features?.[0]?.geometry || null
+      }
+    ].filter((feature) => feature.geometry)
+  });
+
+  const buildCorridorMaskGeoJson = (corridorsGeoJson: any) => {
+    const outerRing = [
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]],
+      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[0][1]],
+      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[1][1]],
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[1][1]],
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]]
+    ];
+    const holes = (corridorsGeoJson.features || []).flatMap((feature: any) => extractOuterRings(feature.geometry));
+
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            id: 'all',
+            kind: 'mask'
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [outerRing, ...holes]
+          }
+        }
+      ]
+    };
+  };
+
+  const loadGeoJsonFile = async (
+    envKey: 'VITE_FAISCEAU_GAILLARD_GEOJSON_URL' | 'VITE_FAISCEAU_STJULIEN_GEOJSON_URL',
+    fallbackUrl: string
+  ) => {
+    const url = env[envKey] || fallbackUrl || resolveFaisceauGeoJsonUrl(envKey);
+    if (!url) return null;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn(`Unable to load ${url}.`, error);
+      return null;
+    }
+  };
+
+  const getCorridorOverviewData = async () => {
+    if (corridorOverviewDataRef.current) return corridorOverviewDataRef.current;
+
+    const [gaillardData, stJulienData] = await Promise.all([
+      loadGeoJsonFile('VITE_FAISCEAU_GAILLARD_GEOJSON_URL', faisceauGaillardGeoJsonUrl),
+      loadGeoJsonFile('VITE_FAISCEAU_STJULIEN_GEOJSON_URL', faisceauStJulienGeoJsonUrl)
+    ]);
+    const corridors = buildOverviewCorridorsGeoJson(gaillardData, stJulienData);
+    const mask = buildCorridorMaskGeoJson(corridors);
+
+    corridorOverviewDataRef.current = { corridors, mask };
+    return corridorOverviewDataRef.current;
+  };
+
+  const ensureCorridorOverviewGeoJsonLayers = async (map: any, currentMode: AtlasMode = mode) => {
+    if (currentMode !== 'bikeability') return;
+
+    const data = await getCorridorOverviewData();
+
+    if (!map.getSource('corridors-overview-geojson')) {
+      map.addSource('corridors-overview-geojson', {
+        type: 'geojson',
+        data: data.corridors
+      });
+    } else {
+      map.getSource('corridors-overview-geojson').setData(data.corridors);
+    }
+
+    if (!map.getSource('corridor-mask-overview-geojson')) {
+      map.addSource('corridor-mask-overview-geojson', {
+        type: 'geojson',
+        data: data.mask
+      });
+    } else {
+      map.getSource('corridor-mask-overview-geojson').setData(data.mask);
+    }
+
+    if (!map.getLayer('corridor-mask-overview-fill')) {
+      map.addLayer({
+        id: 'corridor-mask-overview-fill',
+        type: 'fill',
+        source: 'corridor-mask-overview-geojson',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.78,
+          'fill-antialias': true
+        },
+        layout: {
+          visibility: showCorridorMaskOverviewRef.current ? 'visible' : 'none'
+        }
+      });
+    }
+
+    if (!map.getLayer('corridors-overview-halo')) {
+      map.addLayer({
+        id: 'corridors-overview-halo',
+        type: 'line',
+        source: 'corridors-overview-geojson',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 14, 10, 18, 12, 24, 14, 30],
+          'line-opacity': 0.5,
+          'line-blur': 8
+        },
+        layout: {
+          visibility: showCorridorMaskOverviewRef.current ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      });
+    }
+
+    if (!map.getLayer('corridors-overview-hit-area')) {
+      map.addLayer({
+        id: 'corridors-overview-hit-area',
+        type: 'fill',
+        source: 'corridors-overview-geojson',
+        paint: {
+          'fill-color': '#000000',
+          'fill-opacity': 0
+        },
+        layout: {
+          visibility: showCorridorMaskOverviewRef.current ? 'visible' : 'none'
+        }
+      });
+    }
+
+    if (!map.getLayer('corridors-overview-outline')) {
+      map.addLayer({
+        id: 'corridors-overview-outline',
+        type: 'line',
+        source: 'corridors-overview-geojson',
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#2E6A4A'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 10, 1.8, 12, 2.4, 14, 3],
+          'line-opacity': 0.95
+        },
+        layout: {
+          visibility: showCorridorMaskOverviewRef.current ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      });
+    }
+  };
+
+  const moveCorridorMaskLayer = (map: any, currentMode: AtlasMode = mode) => {
+    if (currentMode !== 'bikeability') return;
+    const maskLayerId = map.getLayer('corridor-mask-overview-fill') ? 'corridor-mask-overview-fill' : null;
+    if (!maskLayerId) return;
+    map.moveLayer(maskLayerId);
+  };
+
+  const moveCorridorsOverviewLayers = (map: any, currentMode: AtlasMode = mode) => {
+    if (currentMode !== 'bikeability') return;
+    for (const layerId of ['corridors-overview-hit-area', 'corridors-overview-halo', 'corridors-overview-outline']) {
+      if (!map.getLayer(layerId)) continue;
+      map.moveLayer(layerId);
+    }
+  };
+
+  const moveAtlasLayers = (map: any) => {
+    for (const layerId of getAtlasLayerIds()) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
+  };
+
+  const moveTransportLayersAboveAtlas = (map: any) => {
+    for (const layerId of getTransportLayerIds(map)) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
+  };
+
+  const reorderMapLayers = (
+    map: any,
+    currentMode: AtlasMode = mode,
+    requestedScale: AtlasScale = scaleRef.current
+  ) => {
+    moveAtlasLayers(map);
+    moveWaterLayersAboveAtlas(map);
+    if (requestedScale !== 'segment') {
+      moveTransportLayersAboveAtlas(map);
+    }
+    moveLabelLayersToTop(map);
+    moveCorridorMaskLayer(map, currentMode);
+    moveCorridorsOverviewLayers(map, currentMode);
+    for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
       if (map.getLayer(layerId)) {
         map.moveLayer(layerId);
       }
@@ -592,6 +895,10 @@ export function Map({
 
   const removeAtlasLayersAndSources = (map: any) => {
     const layerIds = [
+      'corridors-overview-outline',
+      'corridors-overview-halo',
+      'corridors-overview-hit-area',
+      'corridor-mask-overview-fill',
       'perimeter-outline',
       'perimeter-casing',
       'segments-hit-area',
@@ -601,7 +908,7 @@ export function Map({
       'zones-outline',
       'zones-fill'
     ];
-    const sourceIds = ['perimeter', 'segments', 'carreau200', 'zones_trafic'];
+    const sourceIds = ['corridors-overview-geojson', 'corridor-mask-overview-geojson', 'perimeter', 'segments', 'carreau200', 'zones_trafic'];
 
     for (const layerId of layerIds) {
       if (map.getLayer(layerId)) {
@@ -802,15 +1109,10 @@ export function Map({
     }
 
     applyFrenchPlaceLabels(map);
-    moveWaterLayersAboveAtlas(map);
-    for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
-      if (map.getLayer(layerId)) {
-        map.moveLayer(layerId);
-      }
-    }
-    moveLabelLayersToTop(map);
+    reorderMapLayers(map, currentMode, currentScale());
     applyTextLayerVisibility(map, showLabelsRef.current);
     applyScaleVisibility(map, currentScale(), currentMode, currentTerritory);
+    setCorridorMaskOverviewVisibility(map, showCorridorMaskOverviewRef.current, currentMode);
     setPerimeterVisibility(map, showPerimeterRef.current);
   };
 
@@ -1375,19 +1677,31 @@ export function Map({
     if (!mapLoaded || !mapRef.current) return;
     setPerimeterVisibility(mapRef.current, showPerimeter);
     if (showPerimeter) {
-      for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
-        if (mapRef.current.getLayer(layerId)) {
-          mapRef.current.moveLayer(layerId);
-        }
-      }
-      moveLabelLayersToTop(mapRef.current);
+      reorderMapLayers(mapRef.current, mode, scale);
     }
-  }, [mapLoaded, showPerimeter]);
+  }, [mapLoaded, mode, scale, showPerimeter]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    if (showCorridorMaskOverview && mode === 'bikeability') {
+      void ensureCorridorOverviewGeoJsonLayers(mapRef.current, mode).then(() => {
+        setCorridorsOverviewVisibility(mapRef.current, showCorridorMaskOverviewRef.current, mode);
+        setCorridorMaskOverviewVisibility(mapRef.current, showCorridorMaskOverviewRef.current, mode);
+        reorderMapLayers(mapRef.current, mode, scaleRef.current);
+      });
+    }
+    setCorridorsOverviewVisibility(mapRef.current, showCorridorMaskOverview, mode);
+    setCorridorMaskOverviewVisibility(mapRef.current, showCorridorMaskOverview, mode);
+    if (showCorridorMaskOverview) {
+      reorderMapLayers(mapRef.current, mode, scale);
+    }
+  }, [mapLoaded, mode, scale, showCorridorMaskOverview, territory]);
 
   // Update layer visibility based on scale
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     applyScaleVisibility(mapRef.current, scale);
+    reorderMapLayers(mapRef.current, mode, scale);
   }, [mapLoaded, scale, mode, territory, attributeStats]);
 
   useEffect(() => {
@@ -1561,6 +1875,14 @@ export function Map({
       if (event.lngLat) {
         queueCursorUpdate(event.lngLat.lng, event.lngLat.lat);
       }
+      if (mode === 'bikeability' && showCorridorMaskOverviewRef.current && map.getLayer('corridors-overview-hit-area')) {
+        const corridorFeatures = map.queryRenderedFeatures(event.point, { layers: ['corridors-overview-hit-area'] });
+        if (!corridorFeatures.length) {
+          hoverSegmentRef.current(null);
+          map.getCanvas().style.cursor = '';
+          return;
+        }
+      }
       const displayScale = getScaleForZoom(map.getZoom(), scale);
       const layerId = displayScale === 'segment' ? 'segments-hit-area' : displayScale === 'carreau200' ? 'carreau200-fill' : 'zones-fill';
       if (!map.getLayer(layerId)) {
@@ -1704,6 +2026,21 @@ export function Map({
           >
             F
           </button>
+          {mode === 'bikeability' && (
+            <button
+              onClick={() => setShowCorridorMaskOverview((previous) => !previous)}
+              style={{
+                ...buttonBaseStyle(showCorridorMaskOverview),
+                fontFamily: 'Arial, sans-serif',
+                fontSize: 14,
+                fontWeight: 700
+              }}
+              title="Afficher / masquer le corridor mask d'ensemble (C)"
+              aria-pressed={showCorridorMaskOverview}
+            >
+              C
+            </button>
+          )}
           <button
             onClick={handleResetNorth}
             style={buttonBaseStyle(!isNorthAligned)}

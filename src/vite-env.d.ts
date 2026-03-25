@@ -18,7 +18,11 @@ interface ImportMetaEnv {
 	readonly VITE_WALK_SOURCE_LAYER?: string;
 	readonly VITE_CAR_SOURCE_LAYER?: string;
 	readonly VITE_ZT_SOURCE_LAYER?: string;
+	readonly VITE_BIKE_SOURCE_LAYER?: string;
+	readonly VITE_BIKE_CAR_SOURCE_LAYER?: string;
 	readonly VITE_BIKE_INFRA_SOURCE_LAYER?: string;
+	readonly VITE_FAISCEAU_GAILLARD_GEOJSON_URL?: string;
+	readonly VITE_FAISCEAU_STJULIEN_GEOJSON_URL?: string;
 	readonly VITE_PERIMETER_SOURCE_LAYER?: string;
 	readonly VITE_PM_TILES_URL?: string;
 	readonly VITE_PM_TILES_SEGMENT?: string;
@@ -32,8 +36,13 @@ interface ImportMetaEnv {
 	readonly VITE_PM_TILES_BIKE_CARREAU200_CANTONGE?: string;
 	readonly VITE_PM_TILES_BIKE_INFRACOMMUNAL_CANTONGE?: string;
 	readonly VITE_PM_TILES_BIKE_ZONETRAFIC_CANTONGE?: string;
+	readonly VITE_PM_TILES_BIKE_SEGMENT?: string;
+	readonly VITE_PM_TILES_BIKE_CARREAU200?: string;
 	readonly VITE_PM_TILES_PERIMETER?: string;
 	readonly VITE_MAP_STYLE?: string;
+	readonly VITE_MAP_STYLE_VOYAGER?: string;
+	readonly VITE_MAP_STYLE_SWISS_LIGHT?: string;
+	readonly VITE_MAP_STYLE_SWISS_IMAGERY?: string;
 	readonly VITE_MAPBOX_TOKEN?: string;
 }
 interface ImportMeta {
