@@ -4,8 +4,6 @@ import { Box, Compass, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
-import faisceauGaillardGeoJsonUrl from '../../data_raw/perimeter/f3_perimetre_arrondi.geojson?url';
-import faisceauStJulienGeoJsonUrl from '../../data_raw/perimeter/f4_perimetre_arrondi.geojson?url';
 import type { DistributionData } from './DistributionChart';
 import { computeStats, type DataStats } from '../utils/normalize';
 import {
@@ -56,8 +54,8 @@ const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.sw
 const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
 const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
 const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
-const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data_raw/perimeter/f3_perimetre_arrondi.geojson';
-const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data_raw/perimeter/f4_perimetre_arrondi.geojson';
+const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data/perimeter/f3_perimetre_arrondi.geojson';
+const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data/perimeter/f4_perimetre_arrondi.geojson';
 const SCALE_BLEND_START = 10.7;
 const SCALE_BLEND_END = 11.2;
 const LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin|airport|airfield|aerodrome|aeroway/i;
@@ -568,8 +566,8 @@ export function Map({
     if (corridorOverviewDataRef.current) return corridorOverviewDataRef.current;
 
     const [gaillardData, stJulienData] = await Promise.all([
-      loadGeoJsonFile('VITE_FAISCEAU_GAILLARD_GEOJSON_URL', faisceauGaillardGeoJsonUrl),
-      loadGeoJsonFile('VITE_FAISCEAU_STJULIEN_GEOJSON_URL', faisceauStJulienGeoJsonUrl)
+      loadGeoJsonFile('VITE_FAISCEAU_GAILLARD_GEOJSON_URL', DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL),
+      loadGeoJsonFile('VITE_FAISCEAU_STJULIEN_GEOJSON_URL', DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL)
     ]);
     const corridors = buildOverviewCorridorsGeoJson(gaillardData, stJulienData);
     const mask = buildCorridorMaskGeoJson(corridors);
