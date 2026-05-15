@@ -12,7 +12,7 @@ export function TerritoryToggle({ mode, territory, onTerritoryChange, disabled =
 
   return (
     <div
-      className="bg-white rounded-full flex overflow-hidden"
+      className="atlas-segmented atlas-territory-toggle bg-white rounded-full flex overflow-hidden"
       style={{
         border: `1px solid ${theme.accentBorder}`,
         opacity: disabled ? 0.5 : 1
@@ -21,7 +21,7 @@ export function TerritoryToggle({ mode, territory, onTerritoryChange, disabled =
       <button
         onClick={() => !disabled && onTerritoryChange('grandGeneve')}
         disabled={disabled}
-        className={`px-4 py-2 flex items-center gap-2 transition-all text-xs ${
+        className={`atlas-segment-button px-4 py-2 flex items-center gap-2 transition-all text-xs ${
           territory === 'grandGeneve'
             ? 'text-white'
             : disabled
@@ -31,13 +31,14 @@ export function TerritoryToggle({ mode, territory, onTerritoryChange, disabled =
         style={territory === 'grandGeneve' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title={disabled ? 'Sélecteur de territoire bientôt disponible' : "Afficher l'ensemble du territoire d'analyse"}
       >
-        <span>Grand Genève</span>
+        <span className="atlas-territory-label-full">Grand Genève</span>
+        <span className="atlas-territory-label-short">GG</span>
       </button>
       <div className="w-px" style={{ backgroundColor: theme.accentBorder }} />
       <button
         onClick={() => !disabled && onTerritoryChange('cantonGeneve')}
         disabled={disabled}
-        className={`px-4 py-2 flex items-center gap-2 transition-all text-xs ${
+        className={`atlas-segment-button px-4 py-2 flex items-center gap-2 transition-all text-xs ${
           territory === 'cantonGeneve'
             ? 'text-white'
             : disabled
@@ -47,7 +48,8 @@ export function TerritoryToggle({ mode, territory, onTerritoryChange, disabled =
         style={territory === 'cantonGeneve' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title={disabled ? 'Sélecteur de territoire bientôt disponible' : 'Limiter l’affichage au Canton de Genève'}
       >
-        <span>Canton de Genève</span>
+        <span className="atlas-territory-label-full">Canton de Genève</span>
+        <span className="atlas-territory-label-short">GE</span>
       </button>
     </div>
   );

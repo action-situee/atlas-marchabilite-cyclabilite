@@ -9,6 +9,7 @@ import { MODE_CONFIGS, getModeTheme, type AtlasMode } from '../config/modes';
 
 const GENF_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/Logo_Genf.svg';
 const MODUS_LOGO_URL = 'https://github.com/action-situee/assets/blob/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/modus-2025.png?raw=true';
+const FNS_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/logo-fns.png';
 
 const INFO_CONTENT: Record<
   AtlasMode,
@@ -31,7 +32,10 @@ const INFO_CONTENT: Record<
       "L’indice constitue un diagnostic opérationnel, mais ne remplace pas une observation de terrain. Il ne restitue pas pleinement les ambiances, les variations temporelles, les obstacles temporaires ou certaines dimensions sensibles comme le sentiment d’insécurité, l’encombrement ou la perception sociale des lieux.",
     usage:
       "Survolez un objet pour afficher son profil détaillé. Le radar synthétise les classes, le panneau latéral détaille les attributs, et les menus permettent de changer d’échelle d’analyse et de territoire.",
-    partners: [{ name: 'GENF', src: GENF_LOGO_URL }]
+    partners: [
+      { name: 'GENF', src: GENF_LOGO_URL },
+      { name: 'FNS', src: FNS_LOGO_URL }
+    ]
   },
 
   bikeability: {
@@ -46,7 +50,8 @@ const INFO_CONTENT: Record<
       "Survolez un objet pour afficher son profil détaillé. Le radar synthétise les classes, le panneau latéral détaille les attributs, et les menus permettent de changer d’échelle d’analyse et de territoire.",
     partners: [
       { name: 'GENF', src: GENF_LOGO_URL },
-      { name: 'Modus', src: MODUS_LOGO_URL }
+      { name: 'Modus', src: MODUS_LOGO_URL },
+      { name: 'FNS', src: FNS_LOGO_URL }
     ]
   }
 };

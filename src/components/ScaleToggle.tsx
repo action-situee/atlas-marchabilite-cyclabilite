@@ -23,25 +23,26 @@ export function ScaleToggle({
     : 'Secteur - données GIREC';
 
   return (
-    <div className="bg-white rounded-full flex overflow-hidden" style={{ border: `1px solid ${theme.accentBorder}` }}>
+    <div className="atlas-segmented atlas-scale-toggle bg-white rounded-full flex overflow-hidden" style={{ border: `1px solid ${theme.accentBorder}` }}>
       <button
         onClick={() => onScaleChange('segment')}
-        className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
+        className={`atlas-segment-button px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'segment'
             ? 'text-white'
             : 'text-[#5A5A5A] hover:text-[#1A1A1A]'
         }`}
         style={scale === 'segment' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title="Rue - Tronçon de rue"
+        aria-label="Rue - Tronçon de rue"
       >
         <Route className="w-3.5 h-3.5" />
-        <span>Rue</span>
+        <span className="atlas-toggle-label">Rue</span>
       </button>
       <div className="w-px" style={{ backgroundColor: theme.accentBorder }} />
       <button
         onClick={() => onScaleChange('carreau200')}
         disabled={!availableCarreau200}
-        className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
+        className={`atlas-segment-button px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'carreau200'
             ? 'text-white'
             : availableCarreau200
@@ -50,12 +51,13 @@ export function ScaleToggle({
         }`}
         style={scale === 'carreau200' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title={availableCarreau200 ? 'Quartier - Grille statistique 200 m' : 'Quartier - données indisponibles'}
+        aria-label={availableCarreau200 ? 'Quartier - Grille statistique 200 m' : 'Quartier - données indisponibles'}
       >
         <LayoutGrid className="w-3.5 h-3.5" />
-        <span>Quartier</span>
+        <span className="atlas-toggle-label">Quartier</span>
         {!availableCarreau200 && (
           <span
-            className="ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
+            className="atlas-missing-badge ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
             style={{ backgroundColor: theme.accentLight, color: theme.accentDark }}
           >
             Données manquantes
@@ -66,7 +68,7 @@ export function ScaleToggle({
       <button
         onClick={() => onScaleChange('zoneTrafic')}
         disabled={!availableZoneTrafic}
-        className={`px-3 py-2 flex items-center gap-2 transition-all text-xs ${
+        className={`atlas-segment-button px-3 py-2 flex items-center gap-2 transition-all text-xs ${
           scale === 'zoneTrafic'
             ? 'text-white'
             : availableZoneTrafic
@@ -75,12 +77,13 @@ export function ScaleToggle({
         }`}
         style={scale === 'zoneTrafic' ? { backgroundColor: theme.accent, color: theme.accentContrast, fontFamily: 'Arial, sans-serif' } : { fontFamily: 'Arial, sans-serif' }}
         title={availableZoneTrafic ? zoneTitle : `${zoneLabel} - données indisponibles`}
+        aria-label={availableZoneTrafic ? zoneTitle : `${zoneLabel} - données indisponibles`}
       >
         <Map className="w-3.5 h-3.5" />
-        <span>{zoneLabel}</span>
+        <span className="atlas-toggle-label">{zoneLabel}</span>
         {!availableZoneTrafic && (
           <span
-            className="ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
+            className="atlas-missing-badge ml-1 rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
             style={{ backgroundColor: theme.accentLight, color: theme.accentDark }}
           >
             Données manquantes

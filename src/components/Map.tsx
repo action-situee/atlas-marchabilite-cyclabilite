@@ -56,8 +56,42 @@ const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
 const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data/perimeter/f3_perimetre_arrondi.geojson';
 const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data/perimeter/f4_perimetre_arrondi.geojson';
+const SEGMENT_DETAIL_ZOOM = 11;
 const SCALE_BLEND_START = 10.7;
 const SCALE_BLEND_END = 11.2;
+const segmentOpacity = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  6, 0,
+  8, 0,
+  10, 0,
+  SCALE_BLEND_START, 0,
+  SCALE_BLEND_END, 0.92,
+  15, 0.96
+];
+const carreauFillOpacity = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  6, 0.72,
+  8, 0.78,
+  10, 0.84,
+  SCALE_BLEND_START, 0.84,
+  SCALE_BLEND_END, 0,
+  12, 0
+];
+const carreauOutlineOpacity = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  6, 0.16,
+  8, 0.22,
+  10, 0.30,
+  SCALE_BLEND_START, 0.30,
+  SCALE_BLEND_END, 0,
+  12, 0
+];
 const LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin|airport|airfield|aerodrome|aeroway/i;
 const PLACE_LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin/i;
 const WATER_LAYER_PATTERN = /water|lake|ocean|river|canal|stream|reservoir/i;
@@ -116,7 +150,6 @@ export function Map({
   const loadingTimeoutRef = useRef<number | null>(null);
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
-  const previousRequestedScaleRef = useRef<AtlasScale>(scale);
   const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
@@ -291,26 +324,8 @@ export function Map({
   ): AtlasScale => {
     if (requestedScale !== 'segment') return requestedScale;
     if (!hasCarreau200Source(currentMode, currentTerritory)) return 'segment';
-    return zoom <= SCALE_BLEND_START ? 'carreau200' : 'segment';
+    return zoom <= SEGMENT_DETAIL_ZOOM ? 'carreau200' : 'segment';
   };
-
-  const buildSegmentScaleFadeExpression = () => [
-    'case',
-    ['<=', ['zoom'], SCALE_BLEND_START],
-    0,
-    ['>=', ['zoom'], SCALE_BLEND_END],
-    1,
-    ['interpolate', ['linear'], ['zoom'], SCALE_BLEND_START, 0, SCALE_BLEND_END, 1]
-  ];
-
-  const buildCarreauScaleFadeExpression = () => [
-    'case',
-    ['<=', ['zoom'], SCALE_BLEND_START],
-    1,
-    ['>=', ['zoom'], SCALE_BLEND_END],
-    0,
-    ['interpolate', ['linear'], ['zoom'], SCALE_BLEND_START, 1, SCALE_BLEND_END, 0]
-  ];
 
   const buildSegmentBaseOpacityExpression = () => ['interpolate', ['linear'], ['zoom'], 6, 0.98, 8, 0.95, 11, 0.92, 15, 0.88];
 
@@ -448,10 +463,10 @@ export function Map({
   const getAtlasLayerIds = () => [
     'zones-fill',
     'zones-outline',
-    'carreau200-fill',
-    'carreau200-outline',
     'segments-layer',
-    'segments-hit-area'
+    'segments-hit-area',
+    'carreau200-fill',
+    'carreau200-outline'
   ];
 
   const setCorridorMaskOverviewVisibility = (
@@ -723,8 +738,7 @@ export function Map({
     map: any,
     nextScale: AtlasScale,
     currentMode: AtlasMode = mode,
-    currentTerritory: AnalysisTerritory = territory,
-    preferRequestedScale = false
+    currentTerritory: AnalysisTerritory = territory
   ) => {
     const setVisibility = (layerId: string, visible: boolean) => {
       if (!map.getLayer(layerId)) return;
@@ -732,17 +746,14 @@ export function Map({
     };
 
     const hybridSegmentScale =
-      !preferRequestedScale &&
       nextScale === 'segment' &&
       hasCarreau200Source(currentMode, currentTerritory) &&
       map.getLayer('carreau200-fill');
-    const currentZoom = map.getZoom();
-    const showHybridCarreau = Boolean(hybridSegmentScale) && currentZoom <= SCALE_BLEND_END;
 
     setVisibility('segments-layer', nextScale === 'segment');
     setVisibility('segments-hit-area', nextScale === 'segment');
-    setVisibility('carreau200-fill', showHybridCarreau || nextScale === 'carreau200');
-    setVisibility('carreau200-outline', showHybridCarreau || nextScale === 'carreau200');
+    setVisibility('carreau200-fill', Boolean(hybridSegmentScale) || nextScale === 'carreau200');
+    setVisibility('carreau200-outline', Boolean(hybridSegmentScale) || nextScale === 'carreau200');
     setVisibility('zones-fill', nextScale === 'zoneTrafic');
     setVisibility('zones-outline', nextScale === 'zoneTrafic');
 
@@ -751,7 +762,7 @@ export function Map({
         'segments-layer',
         'line-opacity',
         hybridSegmentScale
-          ? ['*', buildSegmentBaseOpacityExpression(), buildSegmentScaleFadeExpression()]
+          ? segmentOpacity
           : nextScale === 'segment'
             ? buildSegmentBaseOpacityExpression()
             : 0
@@ -763,7 +774,7 @@ export function Map({
         'carreau200-fill',
         'fill-opacity',
         hybridSegmentScale
-          ? ['*', 0.6, buildCarreauScaleFadeExpression()]
+          ? carreauFillOpacity
           : nextScale === 'carreau200'
             ? 0.6
             : 0
@@ -775,7 +786,7 @@ export function Map({
         'carreau200-outline',
         'line-opacity',
         hybridSegmentScale
-          ? ['*', 0.5, buildCarreauScaleFadeExpression()]
+          ? carreauOutlineOpacity
           : nextScale === 'carreau200'
             ? 0.5
             : 0
@@ -787,14 +798,13 @@ export function Map({
     map: any,
     requestedScale: AtlasScale = scaleRef.current,
     currentMode: AtlasMode = mode,
-    currentTerritory: AnalysisTerritory = territory,
-    preferRequestedScale = false
+    currentTerritory: AnalysisTerritory = territory
   ) => {
     const previousDisplayScale = displayScaleRef.current;
     const nextDisplayScale = getScaleForZoom(map.getZoom(), requestedScale, currentMode, currentTerritory);
 
     displayScaleRef.current = nextDisplayScale;
-    applyScaleVisibility(map, requestedScale, currentMode, currentTerritory, preferRequestedScale);
+    applyScaleVisibility(map, requestedScale, currentMode, currentTerritory);
 
     if (previousDisplayScale !== nextDisplayScale) {
       hoverSegmentRef.current(null);
@@ -831,8 +841,13 @@ export function Map({
     return 'segments-layer';
   };
 
+  const getDisplayScale = (map: any = mapRef.current) => {
+    if (!map) return currentScale();
+    return getScaleForZoom(map.getZoom(), currentScale(), mode, territory);
+  };
+
   const getAnalyticsLayerId = (map: any = mapRef.current) => {
-    return getLayerIdForScale(currentScale());
+    return getLayerIdForScale(getDisplayScale(map));
   };
 
   const applyAnalysisConstraints = (map: any) => {
@@ -1020,7 +1035,7 @@ export function Map({
           'source-layer': CAR_LAYER,
           paint: {
             'fill-color': '#96C8A6',
-            'fill-opacity': 0.6,
+            'fill-opacity': carreauFillOpacity,
             'fill-antialias': true
           },
           layout: { visibility: 'none' }
@@ -1038,7 +1053,7 @@ export function Map({
           paint: {
             'line-color': '#666',
             'line-width': 0.3,
-            'line-opacity': 0.5
+            'line-opacity': carreauOutlineOpacity
           },
           layout: { visibility: 'none' }
         }
@@ -1055,7 +1070,7 @@ export function Map({
           paint: {
             'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.05, 8, 1.35, 10, 1.55, 11, 1.7, 15, 2.2],
             'line-color': '#96C8A6',
-            'line-opacity': buildSegmentBaseOpacityExpression()
+            'line-opacity': hasCar ? segmentOpacity : buildSegmentBaseOpacityExpression()
           },
           layout: { visibility: 'visible' }
         }
@@ -1582,7 +1597,12 @@ export function Map({
     }
 
     const expr: any[] = ['step', input, VALUE_PALETTE[0]];
-    const thresholds = overrideThresholds && overrideThresholds.length > 0 ? overrideThresholds : quantileThresholds;
+    const thresholds =
+      overrideThresholds && overrideThresholds.length > 0
+        ? overrideThresholds
+        : quantileThresholds.length > 0
+          ? quantileThresholds
+          : VALUE_THRESHOLDS;
     thresholds.forEach((threshold, index) => {
       expr.push(threshold, VALUE_PALETTE[index + 1]);
     });
@@ -1603,8 +1623,15 @@ export function Map({
       map.setPaintProperty('zones-fill', 'fill-color', ramp as any);
     }
     if (onDebugParamsChange) {
-      const thresholds = colorMode === 'linear' ? VALUE_THRESHOLDS : thresholdsOverride && thresholdsOverride.length ? thresholdsOverride : quantileThresholds;
-      onDebugParamsChange({ attr, layerId: getLayerIdForScale(scaleRef.current), thresholds });
+      const thresholds =
+        colorMode === 'linear'
+          ? VALUE_THRESHOLDS
+          : thresholdsOverride && thresholdsOverride.length
+            ? thresholdsOverride
+            : quantileThresholds.length
+              ? quantileThresholds
+              : VALUE_THRESHOLDS;
+      onDebugParamsChange({ attr, layerId: getLayerIdForScale(getDisplayScale(map)), thresholds });
     }
   }
 
@@ -1616,7 +1643,7 @@ export function Map({
     if (!mapRef.current || !mapLoaded) return null;
     const map = mapRef.current;
     const attr = attrOverride || activeAttribute();
-    const layerId = getLayerIdForScale(scaleRef.current);
+    const layerId = getLayerIdForScale(getDisplayScale(map));
     if (!map.getLayer(layerId)) return null;
 
     const features = map.queryRenderedFeatures(undefined, {
@@ -1705,7 +1732,7 @@ export function Map({
   // Update layer visibility based on scale
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
-    applyScaleVisibility(mapRef.current, scale, mode, territory, true);
+    applyScaleVisibility(mapRef.current, scale, mode, territory);
     reorderMapLayers(mapRef.current, mode, scale);
   }, [mapLoaded, scale, mode, territory, attributeStats]);
 
@@ -1714,27 +1741,6 @@ export function Map({
     displayScaleRef.current = scale;
     hoverSegmentRef.current(null);
   }, [scale]);
-
-  useEffect(() => {
-    if (!mapLoaded || !mapRef.current) {
-      previousRequestedScaleRef.current = scale;
-      return;
-    }
-
-    const previousScale = previousRequestedScaleRef.current;
-    previousRequestedScaleRef.current = scale;
-
-    if (mode !== 'bikeability' || scale !== 'segment' || previousScale === 'segment') return;
-
-    const map = mapRef.current;
-    const minimumSegmentZoom = SCALE_BLEND_END + 0.15;
-    if (map.getZoom() >= minimumSegmentZoom) return;
-
-    map.easeTo({
-      zoom: minimumSegmentZoom,
-      duration: 350
-    });
-  }, [mapLoaded, mode, scale]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -1754,7 +1760,7 @@ export function Map({
       }
     });
 
-    syncScaleFromMapZoom(map, scale, mode, territory, true);
+    syncScaleFromMapZoom(map, scale, mode, territory);
     if (sourceIds.every((sourceId) => map.getSource(sourceId)) && areTrackedSourcesLoaded()) return;
 
     const requestId = ++loadRequestRef.current;
@@ -1960,9 +1966,9 @@ export function Map({
   return (
     <div className="absolute inset-0">
       {isLoading && (
-        <div className="absolute left-1/2 z-50 -translate-x-1/2 pointer-events-none" style={{ top: 86 }}>
+        <div className="map-loading-indicator absolute left-1/2 z-50 -translate-x-1/2 pointer-events-none">
           <div
-            className="rounded-2xl border shadow-lg"
+            className="map-loading-card rounded-2xl border shadow-lg"
             style={{
               width: 304,
               height: 72,
@@ -2006,8 +2012,8 @@ export function Map({
 
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" style={{ minHeight: '100vh' }} />
 
-      <div className="absolute z-10 pointer-events-auto" style={{ left: 16, bottom: 52 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div className="map-controls absolute z-10 pointer-events-auto">
+        <div className="map-controls-row">
           <button onClick={handleZoomIn} style={buttonBaseStyle()} title="Zoom avant">
             <ZoomIn className="w-4 h-4" />
           </button>
@@ -2019,6 +2025,7 @@ export function Map({
           </button>
           <button
             onClick={handleTogglePerspective}
+            className="map-secondary-control"
             style={buttonBaseStyle(isPerspective)}
             title="Perspective / orientation (O)"
             aria-pressed={isPerspective}
@@ -2027,6 +2034,7 @@ export function Map({
           </button>
           <button
             onClick={() => setShowLabels((previous) => !previous)}
+            className="map-secondary-control"
             style={{
               ...buttonBaseStyle(showLabels),
               opacity: labelsAvailable ? 1 : 0.58,
@@ -2041,6 +2049,7 @@ export function Map({
           </button>
           <button
             onClick={() => setShowPerimeter((previous) => !previous)}
+            className="map-secondary-control"
             style={{
               ...buttonBaseStyle(showPerimeter),
               fontFamily: 'Arial, sans-serif',
@@ -2055,6 +2064,7 @@ export function Map({
           {mode === 'bikeability' && (
             <button
               onClick={() => setShowCorridorMaskOverview((previous) => !previous)}
+              className="map-secondary-control"
               style={{
                 ...buttonBaseStyle(showCorridorMaskOverview),
                 fontFamily: 'Arial, sans-serif',
@@ -2069,6 +2079,7 @@ export function Map({
           )}
           <button
             onClick={handleResetNorth}
+            className="map-secondary-control"
             style={buttonBaseStyle(!isNorthAligned)}
             title="Remettre le nord en haut (N)"
             aria-pressed={!isNorthAligned}
@@ -2078,6 +2089,7 @@ export function Map({
           <select
             value={basemap}
             onChange={(event) => handleBasemapChange(event.target.value as BasemapMode)}
+            className="map-basemap-select"
             style={basemapSelectStyle}
             title="Fond de carte"
           >
@@ -2098,7 +2110,7 @@ export function Map({
       </div>
 
       <div
-        className="absolute z-10 pointer-events-none"
+        className="map-debug absolute z-10 pointer-events-none"
         style={{
           right: 16,
           bottom: 16,

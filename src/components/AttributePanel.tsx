@@ -65,8 +65,8 @@ export function AttributePanel({
     .filter((entry): entry is readonly [string, AtlasClassScore] => entry !== null);
   
   return (
-    <div className="hidden sm:block absolute right-0 top-0 bottom-0 z-20 w-[300px] pointer-events-none">
-      <div className="h-full flex flex-col p-4 pt-20 pointer-events-auto">
+    <div className="attribute-panel-shell hidden sm:block absolute right-0 z-20 pointer-events-none">
+      <div className="attribute-panel-inner h-full flex flex-col pointer-events-auto">
         <div
           className="backdrop-blur-sm rounded-2xl overflow-hidden shadow-lg max-h-full flex flex-col"
           style={{ backgroundColor: `${theme.panelBackground}F2`, border: `1px solid ${theme.accentBorder}` }}

@@ -201,11 +201,11 @@ export default function App() {
   }, [scale, hasCarreau200, hasZoneTrafic]);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden" style={{ backgroundColor: theme.pageBackground }}>
+    <div className="app-shell relative w-screen h-screen overflow-hidden" style={{ backgroundColor: theme.pageBackground }}>
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 pointer-events-auto bg-white/90 backdrop-blur-sm border-b" style={{ borderColor: theme.accentBorder }}>
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <div className="app-header absolute top-0 left-0 right-0 z-30 pointer-events-auto bg-white/90 backdrop-blur-sm border-b" style={{ borderColor: theme.accentBorder }}>
+        <div className="app-header-inner flex items-center justify-between">
+          <div className="app-brand flex items-center gap-3">
             <a
               href="https://situee.ch"
               target="_blank"
@@ -216,20 +216,20 @@ export default function App() {
               <img
                 src={SITUATED_LOGO_URL}
                 alt="Située"
-                className="h-10 w-auto object-contain"
+                className="app-brand-logo h-10 w-auto object-contain"
               />
             </a>
-            <div className="flex flex-col gap-0">
-              <h1 className="text-[#1A1A1A] text-lg" style={{ fontFamily: 'Arial, sans-serif' }}>
-                Marchabilité & Cyclabilité
+            <div className="app-brand-text flex flex-col gap-0">
+              <h1 className="app-brand-title text-[#1A1A1A] text-lg" style={{ fontFamily: 'Arial, sans-serif' }}>
+                Mobilité Active
               </h1>
-              <p className="text-[10px]" style={{ color: '#1A1A1A', fontFamily: 'Arial, sans-serif' }}>
-                Plateforme de recherche développée sur fonds propres pour accélérer la transition
+              <p className="app-brand-subtitle text-[10px]" style={{ color: '#1A1A1A', fontFamily: 'Arial, sans-serif' }}>
+                Outil développé sur fonds propres pour accélérer la transition
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="app-header-controls flex items-center gap-3">
             {/* Mode Toggle */}
             <ModeToggle mode={mode} onModeChange={handleModeChange} />
             
@@ -248,10 +248,10 @@ export default function App() {
             
             {/* Global Score */}
             <div
-              className="rounded-full px-4 py-2 flex items-center gap-2 border-2 shadow-sm"
+              className="app-score-pill rounded-full px-4 py-2 flex items-center gap-2 border-2 shadow-sm"
               style={{ backgroundColor: theme.accentLight, borderColor: theme.accent }}
             >
-              <span className="text-xs font-medium" style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}>Score</span>
+              <span className="app-score-label text-xs font-medium" style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}>Score</span>
               <span className="text-sm text-[#1A1A1A] tabular-nums font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>
                 {globalScore.toFixed(2)}
               </span>
@@ -259,7 +259,7 @@ export default function App() {
             
             <button
               onClick={() => setInfoOpen(true)}
-              className="bg-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border"
+              className="app-info-button bg-white rounded-full w-8 h-8 flex items-center justify-center transition-colors border"
               style={{ color: theme.accentDark, borderColor: theme.accentBorder }}
               title="Informations"
             >
