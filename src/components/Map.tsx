@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { getPaletteColor, VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
-import { Box, Compass, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Box, Compass, Download, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
@@ -24,6 +24,28 @@ type CameraState = {
   bearing: number;
   pitch: number;
 };
+type ExportWritableFileStream = {
+  write: (data: Blob) => Promise<void>;
+  close: () => Promise<void>;
+  abort?: () => Promise<void>;
+};
+type ExportFileHandle = {
+  createWritable: () => Promise<ExportWritableFileStream>;
+};
+type ExportSavePickerWindow = Window & {
+  showSaveFilePicker?: (options: {
+    suggestedName?: string;
+    types?: Array<{
+      description: string;
+      accept: Record<string, string[]>;
+    }>;
+    excludeAcceptAllOption?: boolean;
+  }) => Promise<ExportFileHandle>;
+};
+type ExportSaveChoice =
+  | { type: 'download' }
+  | { type: 'file'; handle: ExportFileHandle }
+  | { type: 'cancelled' };
 
 type SpatialUnit = 'segment' | 'carreau200';
 
@@ -52,10 +74,20 @@ const DEFAULT_PITCH = 0;
 const DEFAULT_VOYAGER_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json';
 const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
+const ACTION_SITUEE_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
+const GENF_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/Logo_Genf.svg';
+const FNS_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/logo-fns.png';
+const MODUS_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/modus-2025.png';
 const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
 const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data/perimeter/f3_perimetre_arrondi.geojson';
 const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data/perimeter/f4_perimetre_arrondi.geojson';
+const A3_EXPORT_WIDTH = 4961;
+const A3_EXPORT_HEIGHT = 3508;
+const A3_EXPORT_BORDER = 18;
+const A3_EXPORT_CARTOUCHE_HEIGHT = 360;
+const A3_EXPORT_MAX_BYTES = 12 * 1024 * 1024;
+const WEB_MERCATOR_WORLD_METERS = 40075016.686;
 const SEGMENT_DETAIL_ZOOM = 11;
 const SCALE_BLEND_START = 10.7;
 const SCALE_BLEND_END = 11.2;
@@ -171,6 +203,7 @@ export function Map({
   const [showLabels, setShowLabels] = useState(false);
   const [showPerimeter, setShowPerimeter] = useState(true);
   const [showCorridorMaskOverview, setShowCorridorMaskOverview] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
   const [pitch, setPitch] = useState(DEFAULT_PITCH);
   const [labelsAvailable, setLabelsAvailable] = useState(true);
@@ -1609,9 +1642,7 @@ export function Map({
     return expr;
   }
 
-  function applyRamp(attr: string, thresholdsOverride?: number[]) {
-    if (!mapRef.current) return;
-    const map = mapRef.current;
+  function applyRampToMap(map: any, attr: string, thresholdsOverride?: number[]) {
     const ramp = colorRamp(attr, thresholdsOverride);
     if (map.getLayer('segments-layer')) {
       map.setPaintProperty('segments-layer', 'line-color', ramp as any);
@@ -1622,6 +1653,12 @@ export function Map({
     if (map.getLayer('zones-fill')) {
       map.setPaintProperty('zones-fill', 'fill-color', ramp as any);
     }
+  }
+
+  function applyRamp(attr: string, thresholdsOverride?: number[]) {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+    applyRampToMap(map, attr, thresholdsOverride);
     if (onDebugParamsChange) {
       const thresholds =
         colorMode === 'linear'
@@ -1632,6 +1669,716 @@ export function Map({
               ? quantileThresholds
               : VALUE_THRESHOLDS;
       onDebugParamsChange({ attr, layerId: getLayerIdForScale(getDisplayScale(map)), thresholds });
+    }
+  }
+
+  const waitForMapIdle = (map: any, timeoutMs = 30000) => new Promise<void>((resolve) => {
+    let done = false;
+    let attempts = 0;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timeout);
+      map.off('idle', checkReady);
+      resolve();
+    };
+    const checkReady = () => {
+      if (done) return;
+      attempts += 1;
+      if (map.areTilesLoaded() || attempts > 8) {
+        finish();
+        return;
+      }
+      map.once('idle', checkReady);
+    };
+    const timeout = window.setTimeout(finish, timeoutMs);
+    map.once('idle', checkReady);
+    requestAnimationFrame(checkReady);
+  });
+
+  const getExportDataLayerIds = (requestedScale: AtlasScale) => {
+    if (requestedScale === 'zoneTrafic') return ['zones-fill'];
+    if (requestedScale === 'carreau200') return ['carreau200-fill'];
+    return ['segments-layer'];
+  };
+
+  const getExportDataSourceIds = (requestedScale: AtlasScale) => {
+    if (requestedScale === 'zoneTrafic') return ['zones_trafic'];
+    if (requestedScale === 'carreau200') return ['carreau200'];
+    return ['segments'];
+  };
+
+  const waitForExportDataRender = (
+    map: any,
+    requestedScale: AtlasScale,
+    timeoutMs = 45000
+  ) => new Promise<boolean>((resolve) => {
+    const layerIds = getExportDataLayerIds(requestedScale).filter((layerId) => map.getLayer(layerId));
+    const sourceIds = getExportDataSourceIds(requestedScale).filter((sourceId) => map.getSource(sourceId));
+
+    if (!layerIds.length || !sourceIds.length) {
+      resolve(false);
+      return;
+    }
+
+    let done = false;
+    const startedAt = window.performance.now();
+    const finish = (ready: boolean) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timeout);
+      map.off('idle', checkReady);
+      map.off('render', checkReady);
+      resolve(ready);
+    };
+    const sourcesLoaded = () => sourceIds.every((sourceId) => {
+      try {
+        return map.isSourceLoaded(sourceId);
+      } catch {
+        return false;
+      }
+    });
+    const hasRenderedFeatures = () => {
+      try {
+        return map.queryRenderedFeatures(undefined, { layers: layerIds }).length > 0;
+      } catch {
+        return false;
+      }
+    };
+    const checkReady = () => {
+      if (done) return;
+      if (sourcesLoaded() && hasRenderedFeatures()) {
+        finish(true);
+        return;
+      }
+      if (window.performance.now() - startedAt >= timeoutMs) {
+        finish(false);
+      }
+    };
+    const timeout = window.setTimeout(() => finish(false), timeoutMs);
+    map.on('idle', checkReady);
+    map.on('render', checkReady);
+    map.triggerRepaint?.();
+    requestAnimationFrame(checkReady);
+  });
+
+  const loadCanvasImage = (url: string) => new Promise<HTMLImageElement | null>((resolve) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+
+  const canvasToPngBlob = (canvas: HTMLCanvasElement) => new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png');
+  });
+
+  const downscaleCanvas = (sourceCanvas: HTMLCanvasElement, scaleFactor: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(sourceCanvas.width * scaleFactor);
+    canvas.height = Math.round(sourceCanvas.height * scaleFactor);
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  };
+
+  const canvasToSizeAwarePngBlob = async (canvas: HTMLCanvasElement) => {
+    const originalBlob = await canvasToPngBlob(canvas);
+    if (!originalBlob || originalBlob.size <= A3_EXPORT_MAX_BYTES) return { blob: originalBlob, width: canvas.width, height: canvas.height };
+
+    for (const scaleFactor of [0.94, 0.9, 0.86, 0.82, 0.78, 0.76, 0.74]) {
+      const resizedCanvas = downscaleCanvas(canvas, scaleFactor);
+      if (!resizedCanvas) continue;
+      const blob = await canvasToPngBlob(resizedCanvas);
+      if (!blob) continue;
+      if (blob.size <= A3_EXPORT_MAX_BYTES || scaleFactor === 0.74) {
+        return { blob, width: resizedCanvas.width, height: resizedCanvas.height };
+      }
+    }
+
+    return { blob: originalBlob, width: canvas.width, height: canvas.height };
+  };
+
+  const wrapCanvasText = (context: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    for (const word of words) {
+      const candidate = currentLine ? `${currentLine} ${word}` : word;
+      if (context.measureText(candidate).width <= maxWidth || !currentLine) {
+        currentLine = candidate;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  };
+
+  const truncateCanvasText = (context: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+    if (context.measureText(text).width <= maxWidth) return text;
+    let truncated = text;
+    while (truncated.length > 0 && context.measureText(`${truncated}...`).width > maxWidth) {
+      truncated = truncated.slice(0, -1).trimEnd();
+    }
+    return `${truncated}...`;
+  };
+
+  const getScaleLabel = (nextScale: AtlasScale) => {
+    if (nextScale === 'segment') return 'Rue';
+    if (nextScale === 'carreau200') return 'Quartier';
+    return 'Secteur';
+  };
+
+  const getTerritoryLabel = (nextTerritory: AnalysisTerritory) => {
+    if (nextTerritory === 'cantonGeneve') return 'Canton de Genève';
+    return 'Grand Genève';
+  };
+
+  const getBasemapLabel = (nextBasemap: BasemapMode) => {
+    if (nextBasemap === 'swissLight') return 'Swiss Light';
+    if (nextBasemap === 'swissImagery') return 'Swiss Imagerie';
+    if (nextBasemap === 'none') return 'Sans fond';
+    return 'Voyager';
+  };
+
+  const getExportFilename = () => {
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    return `mobilite-active-${mode}-${getScaleLabel(scale).toLowerCase()}-${dateStamp}-a3.png`;
+  };
+
+  const isAbortError = (error: unknown) => (
+    typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && (error as { name?: string }).name === 'AbortError'
+  );
+
+  const resolveExportSaveChoice = async (filename: string): Promise<ExportSaveChoice> => {
+    const showSaveFilePicker = typeof window !== 'undefined'
+      ? (window as ExportSavePickerWindow).showSaveFilePicker
+      : undefined;
+    if (!showSaveFilePicker) return { type: 'download' };
+
+    try {
+      const handle = await showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: 'Image PNG',
+            accept: { 'image/png': ['.png'] }
+          }
+        ],
+        excludeAcceptAllOption: false
+      });
+      return { type: 'file', handle };
+    } catch (error) {
+      if (isAbortError(error)) return { type: 'cancelled' };
+      console.warn('Sélecteur de fichier indisponible pour l’export PNG.', error);
+      return { type: 'download' };
+    }
+  };
+
+  const triggerPngDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const savePngBlob = async (blob: Blob, filename: string, saveChoice: ExportSaveChoice) => {
+    if (saveChoice.type !== 'file') {
+      triggerPngDownload(blob, filename);
+      return;
+    }
+
+    const writable = await saveChoice.handle.createWritable();
+    try {
+      await writable.write(blob);
+      await writable.close();
+    } catch (error) {
+      await writable.abort?.().catch(() => undefined);
+      console.warn('Écriture directe du PNG impossible, repli sur le téléchargement navigateur.', error);
+      triggerPngDownload(blob, filename);
+    }
+  };
+
+  const getExportConsideredDetails = () => {
+    if (selectedAttribute) {
+      const [className, technicalName] = selectedAttribute.split('.');
+      const classDef = modeConfig.classes.find((candidate) => candidate.displayName === className);
+      const attributeDef = classDef?.attributes.find((candidate) => candidate.technicalName === technicalName);
+      return {
+        classes: className || '[À COMPLÉTER]',
+        attributes: attributeDef?.name || technicalName || selectedAttribute
+      };
+    }
+
+    if (selectedClass) {
+      const classDef = modeConfig.classes.find((candidate) => candidate.displayName === selectedClass);
+      const attributeNames = classDef?.attributes.map((attribute) => attribute.name).join(', ');
+      return {
+        classes: selectedClass,
+        attributes: attributeNames || '[À COMPLÉTER]'
+      };
+    }
+
+    return {
+      classes: modeConfig.classOrder.join(', '),
+      attributes: 'Tous les attributs agrégés dans l’indice global'
+    };
+  };
+
+  const getExportPartners = () => {
+    if (mode === 'bikeability') {
+      return [
+        { name: 'Modus', src: MODUS_LOGO_URL },
+        { name: 'GENF', src: GENF_LOGO_URL }
+      ];
+    }
+    return [
+      { name: 'GENF', src: GENF_LOGO_URL },
+      { name: 'FNS', src: FNS_LOGO_URL }
+    ];
+  };
+
+  const drawExportImage = (
+    context: CanvasRenderingContext2D,
+    image: HTMLImageElement | null,
+    x: number,
+    y: number,
+    maxWidth: number,
+    maxHeight: number
+  ) => {
+    if (!image) return 0;
+    const ratio = Math.min(maxWidth / image.width, maxHeight / image.height);
+    const width = image.width * ratio;
+    const height = image.height * ratio;
+    context.drawImage(image, x, y + (maxHeight - height) / 2, width, height);
+    return width;
+  };
+
+  const getExportCamera = (map: any, mapWidth: number, mapHeight: number): CameraState => {
+    const canvas = map.getCanvas();
+    const sourceWidth = canvas.clientWidth || canvas.width || mapWidth;
+    const sourceHeight = canvas.clientHeight || canvas.height || mapHeight;
+    const widthRatio = mapWidth / sourceWidth;
+    const heightRatio = mapHeight / sourceHeight;
+    const zoomOffset = Math.max(0, Math.log2(Math.min(widthRatio, heightRatio)));
+    return {
+      center: [map.getCenter().lng, map.getCenter().lat],
+      zoom: map.getZoom() + zoomOffset,
+      bearing: map.getBearing(),
+      pitch: map.getPitch()
+    };
+  };
+
+  const niceScaleDistance = (targetMeters: number) => {
+    if (!Number.isFinite(targetMeters) || targetMeters <= 0) return 1000;
+    const magnitude = 10 ** Math.floor(Math.log10(targetMeters));
+    const normalized = targetMeters / magnitude;
+    const multiplier = normalized >= 5 ? 5 : normalized >= 2 ? 2 : 1;
+    return multiplier * magnitude;
+  };
+
+  const formatScaleDistance = (meters: number) => {
+    if (meters >= 1000) {
+      const kilometers = meters / 1000;
+      return Number.isInteger(kilometers) ? `${kilometers} km` : `${kilometers.toFixed(1)} km`;
+    }
+    return `${Math.round(meters)} m`;
+  };
+
+  const getMetersPerPixel = (camera: CameraState) => {
+    const latitude = Math.max(-85, Math.min(85, camera.center[1]));
+    return (WEB_MERCATOR_WORLD_METERS * Math.cos((latitude * Math.PI) / 180)) / (512 * 2 ** camera.zoom);
+  };
+
+  const formatExportCoordinate = (value: number) => value.toFixed(5);
+
+  const formatBearing = (value: number) => {
+    const normalized = ((value % 360) + 360) % 360;
+    return `${normalized.toFixed(0)}°`;
+  };
+
+  const drawExportScaleBar = (
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    camera: CameraState,
+    targetWidth = 300
+  ) => {
+    const metersPerPixel = getMetersPerPixel(camera);
+    const distanceMeters = niceScaleDistance(targetWidth * metersPerPixel);
+    const barWidth = Math.max(90, Math.min(470, distanceMeters / metersPerPixel));
+    const label = formatScaleDistance(distanceMeters);
+    const barY = y + 30;
+
+    context.save();
+    context.lineCap = 'butt';
+    context.lineJoin = 'miter';
+    context.font = '500 20px Arial, sans-serif';
+    context.strokeStyle = 'rgba(254, 253, 251, 0.92)';
+    context.lineWidth = 6;
+    context.beginPath();
+    context.moveTo(x, barY - 14);
+    context.lineTo(x, barY);
+    context.lineTo(x + barWidth, barY);
+    context.lineTo(x + barWidth, barY - 14);
+    context.stroke();
+    context.strokeStyle = 'rgba(24, 24, 22, 0.88)';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(x, barY - 14);
+    context.lineTo(x, barY);
+    context.lineTo(x + barWidth, barY);
+    context.lineTo(x + barWidth, barY - 14);
+    context.stroke();
+    context.lineWidth = 4;
+    context.strokeStyle = 'rgba(254, 253, 251, 0.92)';
+    context.strokeText(label, x, y + 12);
+    context.fillStyle = 'rgba(24, 24, 22, 0.92)';
+    context.fillText(label, x, y + 12);
+    context.restore();
+  };
+
+  const drawExportNorthIndicator = (
+    context: CanvasRenderingContext2D,
+    centerX: number,
+    centerY: number,
+    bearing: number
+  ) => {
+    const length = 54;
+    const northAngle = ((-90 - bearing) * Math.PI) / 180;
+    const startX = centerX - Math.cos(northAngle) * (length * 0.38);
+    const startY = centerY - Math.sin(northAngle) * (length * 0.38);
+    const endX = centerX + Math.cos(northAngle) * (length * 0.62);
+    const endY = centerY + Math.sin(northAngle) * (length * 0.62);
+    const labelX = endX + Math.cos(northAngle) * 18;
+    const labelY = endY + Math.sin(northAngle) * 18;
+
+    context.save();
+    context.lineCap = 'round';
+    context.strokeStyle = 'rgba(254, 253, 251, 0.94)';
+    context.lineWidth = 7;
+    context.beginPath();
+    context.moveTo(startX, startY);
+    context.lineTo(endX, endY);
+    context.stroke();
+    context.strokeStyle = 'rgba(24, 24, 22, 0.88)';
+    context.lineWidth = 2.5;
+    context.beginPath();
+    context.moveTo(startX, startY);
+    context.lineTo(endX, endY);
+    context.stroke();
+    context.font = '700 18px Arial, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.lineWidth = 4;
+    context.strokeStyle = 'rgba(254, 253, 251, 0.94)';
+    context.strokeText('N', labelX, labelY);
+    context.fillStyle = 'rgba(24, 24, 22, 0.92)';
+    context.fillText('N', labelX, labelY);
+    context.restore();
+  };
+
+  const interpolateZoomValue = (zoom: number, stops: Array<[number, number]>) => {
+    if (zoom <= stops[0][0]) return stops[0][1];
+    for (let index = 1; index < stops.length; index += 1) {
+      const [stopZoom, stopValue] = stops[index];
+      const [previousZoom, previousValue] = stops[index - 1];
+      if (zoom <= stopZoom) {
+        const ratio = (zoom - previousZoom) / (stopZoom - previousZoom);
+        return previousValue + ratio * (stopValue - previousValue);
+      }
+    }
+    return stops[stops.length - 1][1];
+  };
+
+  const applyExportScalePaint = (
+    exportMap: any,
+    sourceZoom: number,
+    requestedScale: AtlasScale
+  ) => {
+    const setVisibility = (layerId: string, visible: boolean) => {
+      if (!exportMap.getLayer(layerId)) return;
+      exportMap.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+    };
+
+    if (requestedScale === 'zoneTrafic') {
+      setVisibility('segments-layer', false);
+      setVisibility('segments-hit-area', false);
+      setVisibility('carreau200-fill', false);
+      setVisibility('carreau200-outline', false);
+      setVisibility('zones-fill', true);
+      setVisibility('zones-outline', true);
+      return;
+    }
+
+    if (requestedScale === 'carreau200') {
+      setVisibility('segments-layer', false);
+      setVisibility('segments-hit-area', false);
+      setVisibility('carreau200-fill', true);
+      setVisibility('carreau200-outline', true);
+      setVisibility('zones-fill', false);
+      setVisibility('zones-outline', false);
+      if (exportMap.getLayer('carreau200-fill')) exportMap.setPaintProperty('carreau200-fill', 'fill-opacity', 0.6);
+      if (exportMap.getLayer('carreau200-outline')) exportMap.setPaintProperty('carreau200-outline', 'line-opacity', 0.5);
+      return;
+    }
+
+    setVisibility('segments-layer', true);
+    setVisibility('segments-hit-area', true);
+    setVisibility('carreau200-fill', false);
+    setVisibility('carreau200-outline', false);
+    setVisibility('zones-fill', false);
+    setVisibility('zones-outline', false);
+
+    if (exportMap.getLayer('segments-layer')) {
+      const dezoomedPrint = sourceZoom <= SEGMENT_DETAIL_ZOOM;
+      const opacity = dezoomedPrint ? 1 : interpolateZoomValue(sourceZoom, [[11, 0.92], [15, 0.88]]);
+      exportMap.setPaintProperty('segments-layer', 'line-opacity', opacity);
+      exportMap.setPaintProperty(
+        'segments-layer',
+        'line-width',
+        dezoomedPrint
+          ? ['interpolate', ['linear'], ['zoom'], 6, 2.1, 8, 2.35, 10, 2.7, 11, 2.65, 12, 2.45, 15, 2.2]
+          : ['interpolate', ['linear'], ['zoom'], 11, 1.7, 12, 1.85, 15, 2.2]
+      );
+    }
+    if (exportMap.getLayer('carreau200-fill')) {
+      exportMap.setPaintProperty('carreau200-fill', 'fill-opacity', 0);
+    }
+    if (exportMap.getLayer('carreau200-outline')) {
+      exportMap.setPaintProperty('carreau200-outline', 'line-opacity', 0);
+    }
+  };
+
+  const composeA3ExportCanvas = async (
+    mapCanvas: HTMLCanvasElement,
+    sourceCamera: CameraState,
+    exportCamera: CameraState
+  ) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = A3_EXPORT_WIDTH;
+    canvas.height = A3_EXPORT_HEIGHT;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas export indisponible.');
+
+    const pageWidth = A3_EXPORT_WIDTH;
+    const pageHeight = A3_EXPORT_HEIGHT;
+    const border = A3_EXPORT_BORDER;
+    const cartoucheHeight = A3_EXPORT_CARTOUCHE_HEIGHT;
+    const mapX = border;
+    const mapY = border;
+    const mapWidth = pageWidth - border * 2;
+    const mapHeight = pageHeight - cartoucheHeight - border * 2;
+    const cartoucheY = mapY + mapHeight;
+    const cartoucheBottom = pageHeight - border;
+    const cartoucheInnerHeight = cartoucheBottom - cartoucheY;
+    const now = new Date();
+    const exportDate = new Intl.DateTimeFormat('fr-CH', { dateStyle: 'long' }).format(now);
+    const analysisScaleLabel = getScaleLabel(scale);
+    const consideredDetails = getExportConsideredDetails();
+    const [logo, ...partnerLogos] = await Promise.all([
+      loadCanvasImage(ACTION_SITUEE_LOGO_URL),
+      ...getExportPartners().map((partner) => loadCanvasImage(partner.src))
+    ]);
+
+    context.fillStyle = '#FEFDFB';
+    context.fillRect(0, 0, pageWidth, pageHeight);
+    context.drawImage(mapCanvas, mapX, mapY, mapWidth, mapHeight);
+    drawExportScaleBar(context, mapX + 54, mapY + mapHeight - 76, exportCamera, 300);
+    drawExportNorthIndicator(context, mapX + mapWidth - 118, mapY + 126, sourceCamera.bearing);
+
+    context.fillStyle = '#FEFDFB';
+    context.fillRect(border, cartoucheY, pageWidth - border * 2, cartoucheInnerHeight);
+    context.strokeStyle = '#000000';
+    context.lineWidth = 2;
+    context.strokeRect(border, cartoucheY, pageWidth - border * 2, cartoucheInnerHeight);
+
+    const padding = 56;
+    const logoBox = 154;
+    const contentX = border + padding;
+    const contentY = cartoucheY + 38;
+    const sideWidth = 1080;
+    const sideX = pageWidth - border - padding - sideWidth;
+    const mainX = contentX + logoBox + 66;
+    const mainWidth = sideX - mainX - 92;
+    const logoWidth = drawExportImage(context, logo, contentX, contentY + 6, logoBox, 142);
+    if (!logoWidth) {
+      context.fillStyle = '#1A1A1A';
+      context.font = '700 34px Arial, sans-serif';
+      context.fillText('action', contentX, contentY + 42);
+      context.fillText('située', contentX, contentY + 80);
+    }
+
+    const title = `Indice de ${modeConfig.title}`;
+    context.fillStyle = '#111111';
+    context.font = '700 40px Arial, sans-serif';
+    context.fillText(title, mainX, contentY + 32);
+
+    context.font = '400 22px Arial, sans-serif';
+    context.fillStyle = '#4A4A4A';
+    context.fillText('Outil développé sur fonds propres pour accélérer la transition', mainX, contentY + 70);
+
+    context.font = '400 22px Arial, sans-serif';
+    context.fillStyle = '#4A4A4A';
+    const detailY = contentY + 112;
+    const cartoucheDetailLines = [
+      { text: `Indicateur : ${modeConfig.title}`, maxLines: 1 },
+      { text: `Échelle d’analyse : ${analysisScaleLabel}`, maxLines: 1 },
+      { text: `Classes considérées : ${consideredDetails.classes}`, maxLines: 1 },
+      { text: `Attributs considérés : ${consideredDetails.attributes}`, maxLines: 2 },
+      { text: `Fond de carte : ${getBasemapLabel(basemap)}`, maxLines: 1 }
+    ].flatMap(({ text, maxLines }) => {
+      const wrappedLines = wrapCanvasText(context, text, mainWidth);
+      const visibleLines = (wrappedLines.length > 0 ? wrappedLines : [text]).slice(0, maxLines);
+      if (wrappedLines.length > maxLines && visibleLines.length > 0) {
+        visibleLines[visibleLines.length - 1] = truncateCanvasText(context, visibleLines[visibleLines.length - 1], mainWidth);
+      }
+      return visibleLines;
+    });
+    cartoucheDetailLines.slice(0, 6).forEach((line, index) => {
+      context.fillText(line, mainX, detailY + index * 27);
+    });
+    context.fillStyle = '#333333';
+    context.fillText(`Centre : lat ${formatExportCoordinate(sourceCamera.center[1])}, lon ${formatExportCoordinate(sourceCamera.center[0])} | Orientation : ${formatBearing(sourceCamera.bearing)}`, mainX, contentY + 280);
+    context.fillText(`${exportDate} | https://active.situee.ch | contact@situee.ch`, mainX, contentY + 306);
+
+    context.fillStyle = '#111111';
+    context.font = '700 26px Arial, sans-serif';
+    context.fillText('Partenaires', sideX, contentY + 28);
+    let partnerX = sideX;
+    partnerLogos.forEach((partnerLogo, index) => {
+      const drawnWidth = drawExportImage(context, partnerLogo, partnerX, contentY + 46, index === 0 ? 145 : 130, 54);
+      partnerX += Math.max(drawnWidth, 92) + 42;
+    });
+
+    context.fillStyle = '#111111';
+    context.font = '700 26px Arial, sans-serif';
+    context.fillText('Sources et crédits', sideX, contentY + 132);
+    context.font = '400 22px Arial, sans-serif';
+    context.fillStyle = '#333333';
+    [
+      'Bureau Action Située',
+      '© Données par contributeurs OSM et SITG',
+      `Attribution fond : ${basemap === 'none' ? 'aucun fond de carte' : getBasemapLabel(basemap)}`
+    ].forEach((line, index) => {
+      context.fillText(line, sideX, contentY + 166 + index * 29);
+    });
+
+    context.strokeStyle = '#000000';
+    context.lineWidth = 6;
+    context.strokeRect(border / 2, border / 2, pageWidth - border, pageHeight - border);
+
+    return canvas;
+  };
+
+  const createExportMap = (container: HTMLDivElement, exportCamera: CameraState) => new maplibregl.Map({
+    container,
+    style: resolveBasemapStyle(basemap) as any,
+    center: exportCamera.center,
+    zoom: exportCamera.zoom,
+    bearing: exportCamera.bearing,
+    pitch: exportCamera.pitch,
+    maxPitch: 60,
+    interactive: false,
+    preserveDrawingBuffer: true,
+    pixelRatio: 1,
+    transformRequest: (url) => ({ url: rewriteMapboxUrl(url) }),
+    attributionControl: false
+  });
+
+  async function handleExportA3Png() {
+    const map = mapRef.current;
+    if (!map || isExporting) return;
+
+    setIsExporting(true);
+    const filename = getExportFilename();
+    const saveChoice = await resolveExportSaveChoice(filename);
+    if (saveChoice.type === 'cancelled') {
+      setIsExporting(false);
+      return;
+    }
+
+    const mapWidth = A3_EXPORT_WIDTH - A3_EXPORT_BORDER * 2;
+    const mapHeight = A3_EXPORT_HEIGHT - A3_EXPORT_CARTOUCHE_HEIGHT - A3_EXPORT_BORDER * 2;
+    const sourceCamera: CameraState = {
+      center: [map.getCenter().lng, map.getCenter().lat],
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch()
+    };
+    const exportCamera = getExportCamera(map, mapWidth, mapHeight);
+    const exportContainer = document.createElement('div');
+    exportContainer.style.position = 'fixed';
+    exportContainer.style.left = '-100000px';
+    exportContainer.style.top = '0';
+    exportContainer.style.width = `${mapWidth}px`;
+    exportContainer.style.height = `${mapHeight}px`;
+    exportContainer.style.opacity = '0.01';
+    exportContainer.style.pointerEvents = 'none';
+    document.body.appendChild(exportContainer);
+
+    let exportMap: any = null;
+    try {
+      exportMap = createExportMap(exportContainer, exportCamera);
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Chargement de la carte d’export trop long.')), 30000);
+        exportMap.once('load', () => {
+          window.clearTimeout(timeout);
+          resolve();
+        });
+        exportMap.once('error', (event: any) => {
+          if (event?.error?.message) {
+            console.warn('Erreur MapLibre pendant l’export.', event.error);
+          }
+        });
+      });
+
+      ensureAtlasLayers(exportMap, mode, territory);
+      if (mode === 'bikeability' && showCorridorMaskOverviewRef.current) {
+        await ensureCorridorOverviewGeoJsonLayers(exportMap, mode);
+        setCorridorsOverviewVisibility(exportMap, showCorridorMaskOverviewRef.current, mode);
+        setCorridorMaskOverviewVisibility(exportMap, showCorridorMaskOverviewRef.current, mode);
+      }
+      applyRampToMap(
+        exportMap,
+        activeAttribute(),
+        colorMode === 'quantile' ? quantileMap[activeAttribute()] || VALUE_THRESHOLDS : undefined
+      );
+      applyExportScalePaint(exportMap, sourceCamera.zoom, scale);
+      reorderMapLayers(exportMap, mode, scale);
+      exportMap.resize();
+      await waitForMapIdle(exportMap);
+      const hasRenderedAtlasData = await waitForExportDataRender(exportMap, scale);
+      if (!hasRenderedAtlasData) {
+        console.warn('Export PNG sans objet atlas rendu dans le cadrage courant.');
+      }
+      await waitForMapIdle(exportMap, 8000);
+
+      const exportCanvas = await composeA3ExportCanvas(exportMap.getCanvas(), sourceCamera, exportCamera);
+      const { blob } = await canvasToSizeAwarePngBlob(exportCanvas);
+      if (!blob) throw new Error('Impossible de générer le PNG.');
+
+      await savePngBlob(blob, filename, saveChoice);
+    } catch (error) {
+      console.error(error);
+      window.alert("L’export PNG n’a pas pu être généré. Le fond de carte ou certaines tuiles peuvent bloquer l’export canvas.");
+    } finally {
+      exportMap?.remove();
+      exportContainer.remove();
+      setIsExporting(false);
     }
   }
 
@@ -2014,6 +2761,19 @@ export function Map({
 
       <div className="map-controls absolute z-10 pointer-events-auto">
         <div className="map-controls-row">
+          <button
+            onClick={() => handleExportA3Png()}
+            style={{
+              ...buttonBaseStyle(isExporting),
+              opacity: isExporting ? 0.72 : 1,
+              cursor: isExporting ? 'wait' : 'pointer'
+            }}
+            disabled={isExporting}
+            title={isExporting ? 'Export A3 en cours' : 'Exporter la carte en PNG A3'}
+            aria-label="Exporter la carte en PNG A3"
+          >
+            <Download className="w-4 h-4" />
+          </button>
           <button onClick={handleZoomIn} style={buttonBaseStyle()} title="Zoom avant">
             <ZoomIn className="w-4 h-4" />
           </button>
