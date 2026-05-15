@@ -2229,11 +2229,7 @@ export function Map({
 
     context.font = '400 22px Arial, sans-serif';
     context.fillStyle = '#4A4A4A';
-    context.fillText('Outil développé sur fonds propres pour accélérer la transition', mainX, contentY + 70);
-
-    context.font = '400 22px Arial, sans-serif';
-    context.fillStyle = '#4A4A4A';
-    const detailY = contentY + 112;
+    const detailY = contentY + 82;
     const cartoucheDetailLines = [
       { text: `Indicateur : ${modeConfig.title}`, maxLines: 1 },
       { text: `Échelle d’analyse : ${analysisScaleLabel}`, maxLines: 1 },
