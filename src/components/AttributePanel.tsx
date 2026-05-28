@@ -185,6 +185,7 @@ export function AttributePanel({
                               ? (isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR)
                               : getPaletteColor(attr.value);
                             const polarityColor = isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR;
+                            const barValue = isFavorable ? attr.value : 1 - attr.value;
                             
                             return (
                               <div 
@@ -223,9 +224,9 @@ export function AttributePanel({
                                   <div className="relative h-1.5 bg-[#E0DDD8] rounded-full overflow-hidden">
                                     <motion.div
                                       initial={{ width: 0 }}
-                                      animate={{ width: `${attr.value * 100}%` }}
+                                      animate={{ width: `${barValue * 100}%` }}
                                       transition={{ duration: 0.4, delay: index * 0.03 }}
-                                      className="absolute inset-y-0 left-0 rounded-full"
+                                      className={`absolute inset-y-0 rounded-full ${isFavorable ? 'left-0' : 'right-0'}`}
                                       style={{ backgroundColor: barColor }}
                                     />
                                   </div>
