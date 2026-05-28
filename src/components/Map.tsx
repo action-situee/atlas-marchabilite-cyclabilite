@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { getPaletteColor, VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
-import { Box, Compass, Download, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Box, CircleSlash, Compass, Download, Maximize2, Star, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
@@ -48,6 +48,9 @@ type ExportSaveChoice =
   | { type: 'cancelled' };
 
 type SpatialUnit = 'segment' | 'carreau200';
+type ProveloQualificationKey = 'rustineDor' | 'pneuCreuve';
+
+type ProveloQualificationState = Record<ProveloQualificationKey, boolean>;
 
 interface HoveredAtlasFeature {
   id: unknown;
@@ -82,6 +85,15 @@ const DEFAULT_PERIMETER_PMTILES = '/tiles/canton_perimeter.pmtiles';
 const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data/perimeter/f3_perimetre_arrondi.geojson';
 const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data/perimeter/f4_perimetre_arrondi.geojson';
+const DEFAULT_PROVELO_GEOJSON_URL = '/data/perimeter/points_noirs_provelo.geojson';
+const PROVELO_QUALIFICATIONS: Record<ProveloQualificationKey, { value: string; label: string; color: string }> = {
+  rustineDor: { value: "rustine d'or", label: "Rustine d'or", color: '#D69E1E' },
+  pneuCreuve: { value: 'pneu creuve', label: 'Pneu crevé', color: '#A83A32' }
+};
+const EMPTY_PROVELO_QUALIFICATIONS: ProveloQualificationState = {
+  rustineDor: false,
+  pneuCreuve: false
+};
 const A3_EXPORT_WIDTH = 4961;
 const A3_EXPORT_HEIGHT = 3508;
 const A3_EXPORT_BORDER = 18;
@@ -167,6 +179,7 @@ export function Map({
   const showLabelsRef = useRef(false);
   const showPerimeterRef = useRef(false);
   const showCorridorMaskOverviewRef = useRef(false);
+  const proveloQualificationStateRef = useRef<ProveloQualificationState>(EMPTY_PROVELO_QUALIFICATIONS);
   const cameraStateRef = useRef<CameraState>({
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
@@ -183,6 +196,7 @@ export function Map({
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
   const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
+  const proveloOverviewDataRef = useRef<{ shapes: any } | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
@@ -203,6 +217,7 @@ export function Map({
   const [showLabels, setShowLabels] = useState(false);
   const [showPerimeter, setShowPerimeter] = useState(true);
   const [showCorridorMaskOverview, setShowCorridorMaskOverview] = useState(true);
+  const [proveloQualificationState, setProveloQualificationState] = useState<ProveloQualificationState>(EMPTY_PROVELO_QUALIFICATIONS);
   const [isExporting, setIsExporting] = useState(false);
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
   const [pitch, setPitch] = useState(DEFAULT_PITCH);
@@ -216,6 +231,7 @@ export function Map({
   showLabelsRef.current = showLabels;
   showPerimeterRef.current = showPerimeter;
   showCorridorMaskOverviewRef.current = showCorridorMaskOverview;
+  proveloQualificationStateRef.current = proveloQualificationState;
 
   const normalizePmtilesUrl = (url: string) => {
     if (!url) return '';
@@ -334,6 +350,26 @@ export function Map({
     }
     return env[envKey] || DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL;
   };
+
+  const resolveProveloGeoJsonUrl = () => {
+    return env.VITE_PROVELO_GEOJSON_URL || DEFAULT_PROVELO_GEOJSON_URL;
+  };
+
+  const getActiveProveloQualificationValues = (
+    qualifications: ProveloQualificationState = proveloQualificationStateRef.current
+  ) => (Object.entries(qualifications) as Array<[ProveloQualificationKey, boolean]>)
+    .filter(([, active]) => active)
+    .map(([key]) => PROVELO_QUALIFICATIONS[key].value);
+
+  const hasActiveProveloQualifications = (
+    qualifications: ProveloQualificationState = proveloQualificationStateRef.current
+  ) => getActiveProveloQualificationValues(qualifications).length > 0;
+
+  const getActiveProveloQualificationLabels = (
+    qualifications: ProveloQualificationState = proveloQualificationStateRef.current
+  ) => (Object.entries(qualifications) as Array<[ProveloQualificationKey, boolean]>)
+    .filter(([, active]) => active)
+    .map(([key]) => PROVELO_QUALIFICATIONS[key].label);
 
   const toNumeric = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -490,7 +526,7 @@ export function Map({
         return TRANSPORT_LAYER_PATTERN.test(layerId) || TRANSPORT_LAYER_PATTERN.test(sourceLayer);
       })
       .map((layer: any) => layer.id)
-      .filter((layerId: string) => !layerId.startsWith('corridor') && !layerId.startsWith('perimeter') && !layerId.startsWith('segments') && !layerId.startsWith('carreau200') && !layerId.startsWith('zones-'));
+      .filter((layerId: string) => !layerId.startsWith('corridor') && !layerId.startsWith('provelo') && !layerId.startsWith('perimeter') && !layerId.startsWith('segments') && !layerId.startsWith('carreau200') && !layerId.startsWith('zones-'));
   };
 
   const getAtlasLayerIds = () => [
@@ -528,6 +564,25 @@ export function Map({
     map.triggerRepaint();
   };
 
+  const setProveloOverviewVisibility = (
+    map: any,
+    visible: boolean,
+    currentMode: AtlasMode = mode
+  ) => {
+    const nextVisibility = currentMode === 'bikeability' && visible ? 'visible' : 'none';
+    for (const layerId of [
+      'provelo-mask-overview-fill',
+      'provelo-overview-hit-area',
+      'provelo-overview-fill',
+      'provelo-overview-halo',
+      'provelo-overview-outline'
+    ]) {
+      if (!map.getLayer(layerId)) continue;
+      map.setLayoutProperty(layerId, 'visibility', nextVisibility);
+    }
+    map.triggerRepaint();
+  };
+
   const extractOuterRings = (geometry: any): number[][][] => {
     if (!geometry?.type || !geometry?.coordinates) return [];
     if (geometry.type === 'Polygon') {
@@ -538,6 +593,67 @@ export function Map({
     }
     return [];
   };
+
+  const extendBoundsWithCoordinates = (
+    coordinates: any,
+    bounds: [number, number, number, number]
+  ) => {
+    if (!coordinates) return;
+    if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
+      bounds[0] = Math.min(bounds[0], coordinates[0]);
+      bounds[1] = Math.min(bounds[1], coordinates[1]);
+      bounds[2] = Math.max(bounds[2], coordinates[0]);
+      bounds[3] = Math.max(bounds[3], coordinates[1]);
+      return;
+    }
+    for (const child of coordinates) {
+      extendBoundsWithCoordinates(child, bounds);
+    }
+  };
+
+  const getGeoJsonBounds = (geoJson: any): [[number, number], [number, number]] | null => {
+    const bounds: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const feature of geoJson?.features || []) {
+      extendBoundsWithCoordinates(feature.geometry?.coordinates, bounds);
+    }
+    if (bounds.some((value) => !Number.isFinite(value))) return null;
+    return [[bounds[0], bounds[1]], [bounds[2], bounds[3]]];
+  };
+
+  const buildFocusMaskGeoJson = (focusGeoJson: any, id: string) => {
+    const outerRing = [
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]],
+      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[0][1]],
+      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[1][1]],
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[1][1]],
+      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]]
+    ];
+    const holes = (focusGeoJson.features || []).flatMap((feature: any) => extractOuterRings(feature.geometry));
+
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            id,
+            kind: 'mask'
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [outerRing, ...holes]
+          }
+        }
+      ]
+    };
+  };
+
+  const filterProveloGeoJson = (geoJson: any, activeQualificationValues: string[]) => ({
+    type: 'FeatureCollection',
+    features: (geoJson?.features || []).filter((feature: any) => (
+      activeQualificationValues.includes(String(feature.properties?.Qualification || ''))
+    ))
+  });
 
   const buildOverviewCorridorsGeoJson = (gaillardData: any, stJulienData: any) => ({
     type: 'FeatureCollection',
@@ -563,39 +679,9 @@ export function Map({
     ].filter((feature) => feature.geometry)
   });
 
-  const buildCorridorMaskGeoJson = (corridorsGeoJson: any) => {
-    const outerRing = [
-      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]],
-      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[0][1]],
-      [ANALYSIS_MAX_BOUNDS[1][0], ANALYSIS_MAX_BOUNDS[1][1]],
-      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[1][1]],
-      [ANALYSIS_MAX_BOUNDS[0][0], ANALYSIS_MAX_BOUNDS[0][1]]
-    ];
-    const holes = (corridorsGeoJson.features || []).flatMap((feature: any) => extractOuterRings(feature.geometry));
+  const buildCorridorMaskGeoJson = (corridorsGeoJson: any) => buildFocusMaskGeoJson(corridorsGeoJson, 'all');
 
-    return {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {
-            id: 'all',
-            kind: 'mask'
-          },
-          geometry: {
-            type: 'Polygon',
-            coordinates: [outerRing, ...holes]
-          }
-        }
-      ]
-    };
-  };
-
-  const loadGeoJsonFile = async (
-    envKey: 'VITE_FAISCEAU_GAILLARD_GEOJSON_URL' | 'VITE_FAISCEAU_STJULIEN_GEOJSON_URL',
-    fallbackUrl: string
-  ) => {
-    const url = env[envKey] || fallbackUrl || resolveFaisceauGeoJsonUrl(envKey);
+  const loadGeoJsonUrl = async (url: string) => {
     if (!url) return null;
 
     try {
@@ -608,6 +694,13 @@ export function Map({
       console.warn(`Unable to load ${url}.`, error);
       return null;
     }
+  };
+
+  const loadGeoJsonFile = async (
+    envKey: 'VITE_FAISCEAU_GAILLARD_GEOJSON_URL' | 'VITE_FAISCEAU_STJULIEN_GEOJSON_URL',
+    fallbackUrl: string
+  ) => {
+    return loadGeoJsonUrl(env[envKey] || fallbackUrl || resolveFaisceauGeoJsonUrl(envKey));
   };
 
   const getCorridorOverviewData = async () => {
@@ -716,6 +809,153 @@ export function Map({
     }
   };
 
+  const getProveloOverviewData = async () => {
+    if (proveloOverviewDataRef.current) return proveloOverviewDataRef.current;
+
+    const shapes = await loadGeoJsonUrl(resolveProveloGeoJsonUrl());
+    if (!shapes?.features?.length) return null;
+
+    proveloOverviewDataRef.current = { shapes };
+    return proveloOverviewDataRef.current;
+  };
+
+  const ensureProveloOverviewGeoJsonLayers = async (
+    map: any,
+    currentMode: AtlasMode = mode,
+    qualifications: ProveloQualificationState = proveloQualificationStateRef.current
+  ) => {
+    if (currentMode !== 'bikeability') return;
+
+    const data = await getProveloOverviewData();
+    if (!data) return;
+
+    const activeQualificationValues = getActiveProveloQualificationValues(qualifications);
+    const selectedShapes = filterProveloGeoJson(data.shapes, activeQualificationValues);
+    const selectedMask = buildFocusMaskGeoJson(selectedShapes, 'provelo');
+    const hasActiveSelection = activeQualificationValues.length > 0;
+
+    if (!map.getSource('provelo-overview-geojson')) {
+      map.addSource('provelo-overview-geojson', {
+        type: 'geojson',
+        data: selectedShapes
+      });
+    } else {
+      map.getSource('provelo-overview-geojson').setData(selectedShapes);
+    }
+
+    if (!map.getSource('provelo-mask-overview-geojson')) {
+      map.addSource('provelo-mask-overview-geojson', {
+        type: 'geojson',
+        data: selectedMask
+      });
+    } else {
+      map.getSource('provelo-mask-overview-geojson').setData(selectedMask);
+    }
+
+    if (!map.getLayer('provelo-mask-overview-fill')) {
+      map.addLayer({
+        id: 'provelo-mask-overview-fill',
+        type: 'fill',
+        source: 'provelo-mask-overview-geojson',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.78,
+          'fill-antialias': true
+        },
+        layout: {
+          visibility: hasActiveSelection ? 'visible' : 'none'
+        }
+      });
+    }
+
+    if (!map.getLayer('provelo-overview-fill')) {
+      map.addLayer({
+        id: 'provelo-overview-fill',
+        type: 'fill',
+        source: 'provelo-overview-geojson',
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', 'Qualification'],
+            PROVELO_QUALIFICATIONS.rustineDor.value,
+            PROVELO_QUALIFICATIONS.rustineDor.color,
+            PROVELO_QUALIFICATIONS.pneuCreuve.value,
+            PROVELO_QUALIFICATIONS.pneuCreuve.color,
+            '#101010'
+          ],
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.04, 12, 0.08, 14, 0.12],
+          'fill-antialias': true
+        },
+        layout: {
+          visibility: hasActiveSelection ? 'visible' : 'none'
+        }
+      });
+    }
+
+    if (!map.getLayer('provelo-overview-halo')) {
+      map.addLayer({
+        id: 'provelo-overview-halo',
+        type: 'line',
+        source: 'provelo-overview-geojson',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 8, 12, 12, 14, 16],
+          'line-opacity': 0.72,
+          'line-blur': 5
+        },
+        layout: {
+          visibility: hasActiveSelection ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      });
+    }
+
+    if (!map.getLayer('provelo-overview-hit-area')) {
+      map.addLayer({
+        id: 'provelo-overview-hit-area',
+        type: 'fill',
+        source: 'provelo-overview-geojson',
+        paint: {
+          'fill-color': '#000000',
+          'fill-opacity': 0
+        },
+        layout: {
+          visibility: hasActiveSelection ? 'visible' : 'none'
+        }
+      });
+    }
+
+    if (!map.getLayer('provelo-overview-outline')) {
+      map.addLayer({
+        id: 'provelo-overview-outline',
+        type: 'line',
+        source: 'provelo-overview-geojson',
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'Qualification'],
+            PROVELO_QUALIFICATIONS.rustineDor.value,
+            PROVELO_QUALIFICATIONS.rustineDor.color,
+            PROVELO_QUALIFICATIONS.pneuCreuve.value,
+            PROVELO_QUALIFICATIONS.pneuCreuve.color,
+            '#101010'
+          ],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.4, 12, 2.1, 14, 3],
+          'line-opacity': 0.96,
+          'line-dasharray': [1.2, 0.7]
+        },
+        layout: {
+          visibility: hasActiveSelection ? 'visible' : 'none',
+          'line-join': 'round',
+          'line-cap': 'round'
+        }
+      });
+    }
+
+    setProveloOverviewVisibility(map, hasActiveSelection, currentMode);
+  };
+
   const moveCorridorMaskLayer = (map: any, currentMode: AtlasMode = mode) => {
     if (currentMode !== 'bikeability') return;
     const maskLayerId = map.getLayer('corridor-mask-overview-fill') ? 'corridor-mask-overview-fill' : null;
@@ -726,6 +966,21 @@ export function Map({
   const moveCorridorsOverviewLayers = (map: any, currentMode: AtlasMode = mode) => {
     if (currentMode !== 'bikeability') return;
     for (const layerId of ['corridors-overview-hit-area', 'corridors-overview-halo', 'corridors-overview-outline']) {
+      if (!map.getLayer(layerId)) continue;
+      map.moveLayer(layerId);
+    }
+  };
+
+  const moveProveloMaskLayer = (map: any, currentMode: AtlasMode = mode) => {
+    if (currentMode !== 'bikeability') return;
+    if (map.getLayer('provelo-mask-overview-fill')) {
+      map.moveLayer('provelo-mask-overview-fill');
+    }
+  };
+
+  const moveProveloOverviewLayers = (map: any, currentMode: AtlasMode = mode) => {
+    if (currentMode !== 'bikeability') return;
+    for (const layerId of ['provelo-overview-hit-area', 'provelo-overview-fill', 'provelo-overview-halo', 'provelo-overview-outline']) {
       if (!map.getLayer(layerId)) continue;
       map.moveLayer(layerId);
     }
@@ -760,6 +1015,8 @@ export function Map({
     moveLabelLayersToTop(map);
     moveCorridorMaskLayer(map, currentMode);
     moveCorridorsOverviewLayers(map, currentMode);
+    moveProveloMaskLayer(map, currentMode);
+    moveProveloOverviewLayers(map, currentMode);
     for (const layerId of ['perimeter-casing', 'perimeter-outline']) {
       if (map.getLayer(layerId)) {
         map.moveLayer(layerId);
@@ -952,6 +1209,11 @@ export function Map({
       'corridors-overview-halo',
       'corridors-overview-hit-area',
       'corridor-mask-overview-fill',
+      'provelo-overview-outline',
+      'provelo-overview-halo',
+      'provelo-overview-hit-area',
+      'provelo-overview-fill',
+      'provelo-mask-overview-fill',
       'perimeter-outline',
       'perimeter-casing',
       'segments-hit-area',
@@ -961,7 +1223,16 @@ export function Map({
       'zones-outline',
       'zones-fill'
     ];
-    const sourceIds = ['corridors-overview-geojson', 'corridor-mask-overview-geojson', 'perimeter', 'segments', 'carreau200', 'zones_trafic'];
+    const sourceIds = [
+      'corridors-overview-geojson',
+      'corridor-mask-overview-geojson',
+      'provelo-overview-geojson',
+      'provelo-mask-overview-geojson',
+      'perimeter',
+      'segments',
+      'carreau200',
+      'zones_trafic'
+    ];
 
     for (const layerId of layerIds) {
       if (map.getLayer(layerId)) {
@@ -1166,6 +1437,7 @@ export function Map({
     applyTextLayerVisibility(map, showLabelsRef.current);
     applyScaleVisibility(map, currentScale(), currentMode, currentTerritory);
     setCorridorMaskOverviewVisibility(map, showCorridorMaskOverviewRef.current, currentMode);
+    setProveloOverviewVisibility(map, hasActiveProveloQualifications(), currentMode);
     setPerimeterVisibility(map, showPerimeterRef.current);
   };
 
@@ -1366,18 +1638,53 @@ export function Map({
     transition: 'all 150ms ease'
   });
 
+  const proveloPillStyle: CSSProperties = {
+    height: 40,
+    borderRadius: 999,
+    border: '1px solid #D8D2CA',
+    background: 'rgba(255, 255, 255, 0.94)',
+    color: '#5A5A5A',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    padding: 3,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
+  };
+
+  const proveloPillButtonStyle = (qualification: ProveloQualificationKey): CSSProperties => {
+    const active = proveloQualificationState[qualification];
+    return {
+      width: 34,
+      height: 32,
+      borderRadius: 999,
+      border: 'none',
+      background: active ? PROVELO_QUALIFICATIONS[qualification].color : 'transparent',
+      color: active ? '#FFFFFF' : '#5A5A5A',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 150ms ease'
+    };
+  };
+
   const basemapSelectStyle: CSSProperties = {
     height: 40,
     borderRadius: 14,
     border: '1px solid #D8D2CA',
-    background: 'rgba(255, 255, 255, 0.94)',
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M1 1L5 5L9 1\' stroke=\'%235A5A5A\' stroke-width=\'1.4\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")',
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 12px center',
+    backgroundSize: '10px 6px',
     color: '#5A5A5A',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-    padding: '0 12px',
+    padding: '0 34px 0 12px',
     fontFamily: 'Arial, sans-serif',
     fontSize: 11,
     fontWeight: 600,
-    width: 118
+    width: 124,
+    appearance: 'none',
+    WebkitAppearance: 'none'
   };
 
   const normalizedBearing = ((bearing % 360) + 360) % 360;
@@ -1554,6 +1861,78 @@ export function Map({
       bearing: 0,
       duration: 350
     });
+  };
+
+  const getFocusPadding = () => {
+    if (window.innerWidth < 640) {
+      return { top: 76, right: 32, bottom: 112, left: 32 };
+    }
+    return { top: 104, right: 360, bottom: 72, left: 72 };
+  };
+
+  const flyToProveloOverview = async (
+    qualifications: ProveloQualificationState = proveloQualificationStateRef.current
+  ) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const data = await getProveloOverviewData();
+    if (!data) return;
+
+    const activeQualificationValues = getActiveProveloQualificationValues(qualifications);
+    const selectedShapes = filterProveloGeoJson(data.shapes, activeQualificationValues);
+    const selectedBounds = getGeoJsonBounds(selectedShapes);
+    if (!selectedBounds) return;
+
+    map.fitBounds(selectedBounds, {
+      padding: getFocusPadding(),
+      maxZoom: 13.6,
+      duration: 700
+    });
+  };
+
+  const handleToggleProveloQualification = (qualification: ProveloQualificationKey) => {
+    const map = mapRef.current;
+    const activeQualificationValues = getActiveProveloQualificationValues();
+    const isOnlyActiveQualification = proveloQualificationStateRef.current[qualification] && activeQualificationValues.length === 1;
+    const nextQualifications: ProveloQualificationState = isOnlyActiveQualification
+      ? EMPTY_PROVELO_QUALIFICATIONS
+      : {
+          rustineDor: qualification === 'rustineDor',
+          pneuCreuve: qualification === 'pneuCreuve'
+        };
+    const hasNextProveloSelection = hasActiveProveloQualifications(nextQualifications);
+
+    setProveloQualificationState(nextQualifications);
+    if (hasNextProveloSelection) {
+      setShowCorridorMaskOverview(false);
+      if (!map) return;
+      void ensureProveloOverviewGeoJsonLayers(map, mode, nextQualifications).then(() => {
+        if (!mapRef.current) return;
+        setProveloOverviewVisibility(mapRef.current, true, mode);
+        setCorridorsOverviewVisibility(mapRef.current, false, mode);
+        setCorridorMaskOverviewVisibility(mapRef.current, false, mode);
+        reorderMapLayers(mapRef.current, mode, scaleRef.current);
+      });
+      void flyToProveloOverview(nextQualifications);
+      return;
+    }
+
+    if (map) {
+      void ensureProveloOverviewGeoJsonLayers(map, mode, nextQualifications).then(() => {
+        if (!mapRef.current) return;
+        setProveloOverviewVisibility(mapRef.current, false, mode);
+        reorderMapLayers(mapRef.current, mode, scaleRef.current);
+      });
+    }
+  };
+
+  const handleToggleCorridorMaskOverview = () => {
+    const nextVisible = !showCorridorMaskOverviewRef.current;
+    setShowCorridorMaskOverview(nextVisible);
+    if (nextVisible) {
+      setProveloQualificationState(EMPTY_PROVELO_QUALIFICATIONS);
+    }
   };
 
   const handleBasemapChange = (nextBasemap: BasemapMode) => {
@@ -2268,8 +2647,9 @@ export function Map({
     [
       'Bureau Action Située',
       '© Données par contributeurs OSM et SITG',
+      hasActiveProveloQualifications() ? `Zones PROVELO : ${getActiveProveloQualificationLabels().join(', ')}` : null,
       `Attribution fond : ${basemap === 'none' ? 'aucun fond de carte' : getBasemapLabel(basemap)}`
-    ].forEach((line, index) => {
+    ].filter((line): line is string => Boolean(line)).forEach((line, index) => {
       context.fillText(line, sideX, contentY + 166 + index * 29);
     });
 
@@ -2347,6 +2727,10 @@ export function Map({
         await ensureCorridorOverviewGeoJsonLayers(exportMap, mode);
         setCorridorsOverviewVisibility(exportMap, showCorridorMaskOverviewRef.current, mode);
         setCorridorMaskOverviewVisibility(exportMap, showCorridorMaskOverviewRef.current, mode);
+      }
+      if (mode === 'bikeability' && hasActiveProveloQualifications()) {
+        await ensureProveloOverviewGeoJsonLayers(exportMap, mode);
+        setProveloOverviewVisibility(exportMap, true, mode);
       }
       applyRampToMap(
         exportMap,
@@ -2471,6 +2855,27 @@ export function Map({
       reorderMapLayers(mapRef.current, mode, scale);
     }
   }, [mapLoaded, mode, scale, showCorridorMaskOverview, territory]);
+
+  useEffect(() => {
+    if (mode !== 'bikeability' && hasActiveProveloQualifications(proveloQualificationState)) {
+      setProveloQualificationState(EMPTY_PROVELO_QUALIFICATIONS);
+    }
+  }, [mode, proveloQualificationState]);
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const hasProveloSelection = hasActiveProveloQualifications(proveloQualificationState);
+    if (hasProveloSelection && mode === 'bikeability') {
+      void ensureProveloOverviewGeoJsonLayers(mapRef.current, mode, proveloQualificationState).then(() => {
+        setProveloOverviewVisibility(mapRef.current, hasActiveProveloQualifications(proveloQualificationStateRef.current), mode);
+        reorderMapLayers(mapRef.current, mode, scaleRef.current);
+      });
+    }
+    setProveloOverviewVisibility(mapRef.current, hasProveloSelection, mode);
+    if (hasProveloSelection) {
+      reorderMapLayers(mapRef.current, mode, scale);
+    }
+  }, [mapLoaded, mode, scale, proveloQualificationState, territory]);
 
   // Update layer visibility based on scale
   useEffect(() => {
@@ -2658,6 +3063,14 @@ export function Map({
           return;
         }
       }
+      if (mode === 'bikeability' && hasActiveProveloQualifications() && map.getLayer('provelo-overview-hit-area')) {
+        const proveloFeatures = map.queryRenderedFeatures(event.point, { layers: ['provelo-overview-hit-area'] });
+        if (!proveloFeatures.length) {
+          hoverSegmentRef.current(null);
+          map.getCanvas().style.cursor = '';
+          return;
+        }
+      }
       const displayScale = getScaleForZoom(map.getZoom(), scale);
       const layerId = displayScale === 'segment' ? 'segments-hit-area' : displayScale === 'carreau200' ? 'carreau200-fill' : 'zones-fill';
       if (!map.getLayer(layerId)) {
@@ -2819,7 +3232,7 @@ export function Map({
           </button>
           {mode === 'bikeability' && (
             <button
-              onClick={() => setShowCorridorMaskOverview((previous) => !previous)}
+              onClick={handleToggleCorridorMaskOverview}
               className="map-secondary-control"
               style={{
                 ...buttonBaseStyle(showCorridorMaskOverview),
@@ -2832,6 +3245,33 @@ export function Map({
             >
               C
             </button>
+          )}
+          {mode === 'bikeability' && (
+            <div
+              className="map-secondary-control"
+              style={proveloPillStyle}
+              role="group"
+              aria-label="Filtres PROVELO"
+            >
+              <button
+                onClick={() => handleToggleProveloQualification('rustineDor')}
+                style={proveloPillButtonStyle('rustineDor')}
+                title="Afficher / masquer les Rustines d'or PROVELO"
+                aria-label="Afficher / masquer les Rustines d'or PROVELO"
+                aria-pressed={proveloQualificationState.rustineDor}
+              >
+                <Star className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleToggleProveloQualification('pneuCreuve')}
+                style={proveloPillButtonStyle('pneuCreuve')}
+                title="Afficher / masquer les Pneus crevés PROVELO"
+                aria-label="Afficher / masquer les Pneus crevés PROVELO"
+                aria-pressed={proveloQualificationState.pneuCreuve}
+              >
+                <CircleSlash className="w-4 h-4" />
+              </button>
+            </div>
           )}
           <button
             onClick={handleResetNorth}

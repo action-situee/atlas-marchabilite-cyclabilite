@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Atlas Mobilite Active">
+  <rect width="64" height="64" rx="14" fill="#f7fbf5"/>
+  <path d="M14 45c8-16 17-24 36-27" fill="none" stroke="#2e6a4a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M14 45c10-4 20-5 36-2" fill="none" stroke="#d7a31b" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="17" cy="45" r="4" fill="#173828"/>
+  <circle cx="50" cy="18" r="4" fill="#173828"/>
+</svg>

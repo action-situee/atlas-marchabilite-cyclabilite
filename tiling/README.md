@@ -33,6 +33,9 @@ Place your raw data in `data_raw/`. Current defaults expect:
   - `data_raw/cyclability/CantonGE/step3_index.parquet`
   - `data_raw/cyclability/CantonGE/step3_aggregated_index_carreau200.parquet`
   - `data_raw/cyclability/CantonGE/step3_aggregated_index_gg_infra_communal.parquet`
+- PROVELO perimeter overlay:
+  - `data_raw/perimeter/points_noirs_provelo.geojson` in EPSG:2056, reprojected to WGS84 for the app
+  - property `Qualification`: `rustine d'or` or `pneu creuve`
 
 For walkability AggloGG infracommunal, `step3_aggregated_index_gg_infra_communal.parquet` is preferred and `step3_aggregated_index_girec.parquet` is only kept as a fallback.
 
@@ -73,6 +76,8 @@ This will generate:
   - `public/tiles/bike_canton_segment.pmtiles`
   - `public/tiles/bike_canton_carreau200.pmtiles`
   - `public/tiles/bike_canton_infracommunal.pmtiles`
+- Perimeter overlays:
+  - `public/data/perimeter/points_noirs_provelo.geojson`
 
 The app will automatically use `public/tiles/walk_agglo_segment.pmtiles` during `npm run dev` and after build.
 
@@ -88,6 +93,7 @@ bash ./tiling/make_tiles_docker.sh
 2) Convert to NDJSON (GeoJSON Sequence) for tippecanoe
 3) tippecanoe → vector tiles `.mbtiles` with layer name `walknet`
 4) pmtiles convert → `.pmtiles`
+5) Reproject small perimeter overlays, such as the PROVELO GeoJSON, to public WGS84 GeoJSON
 
 Artifacts and temp files are in `data_tiles/` and `public/tiles/`.
 
@@ -121,6 +127,7 @@ Two modes are supported; the app tries PMTiles first if present.
 Common:
 - `VITE_WALK_SOURCE_LAYER=walknet`
 - `VITE_BIKE_SOURCE_LAYER=bikenet`
+- `VITE_PROVELO_GEOJSON_URL=/data/perimeter/points_noirs_provelo.geojson`
 
 Create `.env.local` (not committed) in project root to override.
 

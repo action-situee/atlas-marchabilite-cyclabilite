@@ -8,14 +8,16 @@ ROOT_DIR="$(cd "$(dirname "$0")" && cd .. && pwd)"
 RAW_DIR="$ROOT_DIR/data_raw"
 OUT_DIR="$ROOT_DIR/data_tiles"
 PUB_TILES_DIR="$ROOT_DIR/public/tiles"
+PUB_DATA_PERIMETER_DIR="$ROOT_DIR/public/data/perimeter"
 TMP_DIR="$OUT_DIR/tmp"
 
-mkdir -p "$OUT_DIR" "$TMP_DIR" "$PUB_TILES_DIR"
+mkdir -p "$OUT_DIR" "$TMP_DIR" "$PUB_TILES_DIR" "$PUB_DATA_PERIMETER_DIR"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Error: '$1' is required but not installed."; exit 127; }; }
 need ogr2ogr
 need tippecanoe
 need pmtiles
+need node
 
 resolve_input() {
   local preferred="$1"
@@ -97,6 +99,46 @@ build_carreau_tiles() {
   bash "$ROOT_DIR/tiling/make_carreau200_strict.sh"
 }
 
+prepare_public_geojson() {
+  local label="$1"
+  local input="$2"
+  local output="$3"
+
+  if [ ! -f "$input" ]; then
+    echo "⚠️  Skipping $label: $input not found"
+    return 0
+  fi
+
+  echo "➡️  [$label] Reproject to public GeoJSON WGS84"
+  rm -f "$output"
+  ogr2ogr -f GeoJSON "$output" "$input" -t_srs EPSG:4326 -lco RFC7946=YES
+  ls -lh "$output"
+  echo "✅ [$label] GeoJSON ready: $output"
+}
+
+add_provelo_qualification() {
+  local geojson="$1"
+
+  if [ ! -f "$geojson" ]; then
+    return 0
+  fi
+
+  node -e '
+const fs = require("fs");
+const file = process.argv[1];
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+const rustines = new Set(["rue_du_college", "rue_du_rhone"]);
+for (const feature of data.features || []) {
+  const name = feature.properties && feature.properties.NAME;
+  feature.properties = {
+    ...feature.properties,
+    Qualification: rustines.has(name) ? "rustine d'\''or" : "pneu creuve"
+  };
+}
+fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
+' "$geojson"
+}
+
 WALK_GG_SEG_INPUT="$(resolve_input "walkability/AggloGG/step3_index.parquet" "walkability/step3_index.parquet" || true)"
 WALK_GG_CAR_INPUT="$(resolve_input "walkability/AggloGG/step3_aggregated_index_carreau200.parquet" "walkability/step3_aggregated_index_carreau200.parquet" || true)"
 WALK_GG_ZT_INPUT="$(resolve_input "walkability/AggloGG/step3_aggregated_index_gg_infra_communal.parquet" "walkability/AggloGG/step3_aggregated_index_girec.parquet" || true)"
@@ -111,6 +153,13 @@ BIKE_CANTON_SEG_INPUT="$(resolve_input "cyclability/CantonGE/step3_index.parquet
 BIKE_CANTON_CAR_INPUT="$(resolve_input "cyclability/CantonGE/step3_aggregated_index_carreau200.parquet" || true)"
 BIKE_CANTON_ZT_INPUT="$(resolve_input "cyclability/CantonGE/step3_aggregated_index_gg_infra_communal.parquet" "cyclability/CantonGE/step3_aggregated_index_girec.parquet" || true)"
 PERIMETER_INPUT="$(resolve_input "perimeter/CAD_LIMITE_CANTON_SANS_LAC.parquet" "perimeter/CAD_LIMITE_CANTON.parquet" || true)"
+PROVELO_INPUT="$(resolve_input "perimeter/points_noirs_provelo.geojson" || true)"
+
+prepare_public_geojson \
+  "perimeter/points_noirs_provelo" \
+  "$PROVELO_INPUT" \
+  "$PUB_DATA_PERIMETER_DIR/points_noirs_provelo.geojson"
+add_provelo_qualification "$PUB_DATA_PERIMETER_DIR/points_noirs_provelo.geojson"
 
 build_vector_tiles \
   "walkability/AggloGG/segment" \

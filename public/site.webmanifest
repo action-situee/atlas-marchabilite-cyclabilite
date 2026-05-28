@@ -1,0 +1,19 @@
+{
+  "name": "Atlas Mobilite Active",
+  "short_name": "Mobilite Active",
+  "description": "Atlas cartographique de marchabilite et de cyclabilite dans le Grand Geneve et le Canton de Geneve.",
+  "lang": "fr-CH",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7fbf5",
+  "theme_color": "#2E6A4A",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { ScaleToggle } from './components/ScaleToggle';
 import { TerritoryToggle } from './components/TerritoryToggle';
 import { Info } from 'lucide-react';
 import type { DistributionData } from './components/DistributionChart';
+import { applySeoForMode } from './seo';
 import {
   buildEmptyScores,
   MODE_CONFIGS,
@@ -57,7 +58,7 @@ const getModeFromLocation = (location: Location): AtlasMode => {
   return getModeFromPathname(location.pathname);
 };
 
-const buildModeUrl = (mode: AtlasMode, search = window.location.search) => `/${search}${MODE_HASHES[mode]}`;
+const buildModeUrl = (mode: AtlasMode, search = window.location.search) => `${MODE_PATHS[mode]}${search}`;
 
 const calculateGlobalScore = (data: AtlasScores) => {
   const classes = Object.values(data);
@@ -139,7 +140,7 @@ export default function App() {
     setSelectedClass(null);
   };
 
-  const syncModeHash = (nextMode: AtlasMode, replace = false) => {
+  const syncModeUrl = (nextMode: AtlasMode, replace = false) => {
     const nextUrl = buildModeUrl(nextMode);
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (currentUrl === nextUrl) return;
@@ -156,7 +157,7 @@ export default function App() {
     setMode(nextMode);
     setTerritory(DEFAULT_TERRITORY_BY_MODE[nextMode]);
     setScale(DEFAULT_SCALE);
-    syncModeHash(nextMode);
+    syncModeUrl(nextMode);
   };
 
   const resetScaleToDefault = () => {
@@ -180,7 +181,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    syncModeHash(mode, true);
+    syncModeUrl(mode, true);
+    applySeoForMode(mode);
   }, [mode]);
 
   useEffect(() => {
