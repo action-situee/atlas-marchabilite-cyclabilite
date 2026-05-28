@@ -2,7 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_SITE_URL = 'https://atlas-marchabilite-cyclabilite.pages.dev';
+const DEFAULT_SITE_URL = 'https://active.situee.ch';
+const SITUATED_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const buildDir = path.join(rootDir, 'build');
@@ -77,7 +78,6 @@ function replaceOrInsert(html, pattern, replacement, before = '</head>') {
 
 function renderRouteHtml(baseHtml, route) {
   const url = absoluteUrl(route.path);
-  const imageUrl = absoluteUrl('/og-image.svg');
   let html = baseHtml;
 
   const replacements = [
@@ -89,10 +89,11 @@ function renderRouteHtml(baseHtml, route) {
     [/<meta\s+property="og:title"\s+content="[^"]*"\s*\/>/, `<meta property="og:title" content="${escapeHtml(route.title)}" />`],
     [/<meta\s+property="og:description"\s+content="[^"]*"\s*\/>/, `<meta property="og:description" content="${escapeHtml(route.description)}" />`],
     [/<meta\s+property="og:url"\s+content="[^"]*"\s*\/>/, `<meta property="og:url" content="${url}" />`],
-    [/<meta\s+property="og:image"\s+content="[^"]*"\s*\/>/, `<meta property="og:image" content="${imageUrl}" />`],
+    [/<meta\s+property="og:image"\s+content="[^"]*"\s*\/>/, `<meta property="og:image" content="${SITUATED_LOGO_URL}" />`],
+    [/<meta\s+property="og:image:alt"\s+content="[^"]*"\s*\/>/, '<meta property="og:image:alt" content="Logo Située" />'],
     [/<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/>/, `<meta name="twitter:title" content="${escapeHtml(route.title)}" />`],
     [/<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/>/, `<meta name="twitter:description" content="${escapeHtml(route.description)}" />`],
-    [/<meta\s+name="twitter:image"\s+content="[^"]*"\s*\/>/, `<meta name="twitter:image" content="${imageUrl}" />`],
+    [/<meta\s+name="twitter:image"\s+content="[^"]*"\s*\/>/, `<meta name="twitter:image" content="${SITUATED_LOGO_URL}" />`],
     [/<script\s+type="application\/ld\+json"\s+id="structured-data">[\s\S]*?<\/script>/, `<script type="application/ld+json" id="structured-data">${jsonLd(route)}</script>`]
   ];
 

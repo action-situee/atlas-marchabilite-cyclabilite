@@ -1,6 +1,7 @@
 import type { AtlasMode } from './config/modes';
 
-const DEFAULT_SITE_URL = 'https://atlas-marchabilite-cyclabilite.pages.dev';
+const DEFAULT_SITE_URL = 'https://active.situee.ch';
+const SITUATED_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
 
 type SeoConfig = {
   path: string;
@@ -105,8 +106,6 @@ const setStructuredData = (seo: SeoConfig, url: string) => {
 export const applySeoForMode = (mode: AtlasMode) => {
   const seo = SEO_BY_MODE[mode] || DEFAULT_SEO;
   const canonicalUrl = getAbsoluteUrl(seo.path);
-  const imageUrl = getAbsoluteUrl('/og-image.svg');
-
   document.documentElement.lang = 'fr-CH';
   document.title = seo.title;
   setCanonical(canonicalUrl);
@@ -116,10 +115,10 @@ export const applySeoForMode = (mode: AtlasMode) => {
   setPropertyMeta('og:title', seo.title);
   setPropertyMeta('og:description', seo.description);
   setPropertyMeta('og:url', canonicalUrl);
-  setPropertyMeta('og:image', imageUrl);
-  setPropertyMeta('og:image:alt', 'Atlas Mobilité Active, carte interactive de marchabilité et de cyclabilité');
+  setPropertyMeta('og:image', SITUATED_LOGO_URL);
+  setPropertyMeta('og:image:alt', 'Logo Située');
   setNamedMeta('twitter:title', seo.title);
   setNamedMeta('twitter:description', seo.description);
-  setNamedMeta('twitter:image', imageUrl);
+  setNamedMeta('twitter:image', SITUATED_LOGO_URL);
   setStructuredData(seo, canonicalUrl);
 };

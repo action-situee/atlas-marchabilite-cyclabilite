@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://atlas-marchabilite-cyclabilite.pages.dev/sitemap.xml
+Sitemap: https://active.situee.ch/sitemap.xml

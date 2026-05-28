@@ -110,7 +110,7 @@
   - Martin bikeability: `VITE_TILEJSON_BIKE_SEGMENT=http://localhost:3000/bike_agglo_segment`
   - Martin perimeter overlay: `VITE_TILEJSON_PERIMETER=http://localhost:3000/canton_perimeter`
   - Layer names expected by the app: `VITE_WALK_SOURCE_LAYER=walknet`, `VITE_BIKE_SOURCE_LAYER=bikenet`
-  - Public canonical URL for SEO files: `VITE_SITE_URL=https://atlas-marchabilite-cyclabilite.pages.dev`
+  - Public canonical URL for SEO files: `VITE_SITE_URL=https://active.situee.ch`
 
   ## Deploy on Cloudflare
 
@@ -121,7 +121,7 @@
   Steps:
   1) Upload your `walk_agglo_segment.pmtiles` to R2 (public)
   2) In Cloudflare Pages Project → Environment Variables, set `VITE_PM_TILES_URL` to your R2 public URL
-  3) Set `VITE_SITE_URL` to the final public domain before indexing the site
+  3) Set `VITE_SITE_URL=https://active.situee.ch` before indexing the site
   4) Each push to `master` (or your chosen branch) will build and deploy
 
   SEO and indexing:
