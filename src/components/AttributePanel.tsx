@@ -184,6 +184,7 @@ export function AttributePanel({
                             const barColor = useFavorableBars
                               ? (isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR)
                               : getPaletteColor(attr.value);
+                            const polarityColor = isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR;
                             
                             return (
                               <div 
@@ -199,12 +200,15 @@ export function AttributePanel({
                                       ? ''
                                       : ''
                                   }`}
-                                  style={{ backgroundColor: isAttrSelected ? theme.accent : theme.accentLight }}
+                                  style={{
+                                    backgroundColor: isAttrSelected ? polarityColor : `${polarityColor}1A`,
+                                    boxShadow: isAttrSelected ? `0 0 0 2px ${polarityColor}33` : 'none'
+                                  }}
                                   title="Visualiser cet attribut"
                                 >
                                   <div
                                     className="w-1.5 h-1.5 rounded-full"
-                                    style={{ backgroundColor: isAttrSelected ? theme.accentContrast : classInfo.color }}
+                                    style={{ backgroundColor: isAttrSelected ? '#FFFFFF' : polarityColor }}
                                   />
                                 </button>
                                 <div className="flex-1 min-w-0">

@@ -79,7 +79,7 @@ export default function App() {
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [showDistribution, setShowDistribution] = useState(false);
   const [distributionData, setDistributionData] = useState<DistributionData | null>(null);
-  const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('quantile');
+  const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('linear');
   const [debugParams, setDebugParams] = useState<AtlasDebugParams | null>(null);
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
@@ -119,9 +119,11 @@ export default function App() {
   const handleSelectClass = (className: string) => {
     if (selectedClass === className) {
       setSelectedClass(null);
+      setColorMode('quantile');
     } else {
       setSelectedClass(className);
       setSelectedAttribute(null); // Désélectionner l'attribut si une classe est sélectionnée
+      setColorMode('quantile');
     }
   };
 
@@ -132,12 +134,14 @@ export default function App() {
     } else {
       setSelectedAttribute(key);
       setSelectedClass(null); // Désélectionner la classe si un attribut est sélectionné
+      setColorMode('linear');
     }
   };
 
   const handleReset = () => {
     setSelectedAttribute(null);
     setSelectedClass(null);
+    setColorMode('quantile');
   };
 
   const syncModeUrl = (nextMode: AtlasMode, replace = false) => {
@@ -192,6 +196,7 @@ export default function App() {
     setDistributionData(null);
     setDebugParams(null);
     setAttributeData(buildEmptyScores(mode));
+    setColorMode('quantile');
   }, [mode]);
 
   useEffect(() => {
@@ -279,6 +284,7 @@ export default function App() {
         territory={territory}
         scale={scale}
         colorMode={colorMode}
+        showDistribution={showDistribution}
         onHoverSegment={(segment) => {
           if (segment && segment.scores) {
             setAttributeData(segment.scores);
