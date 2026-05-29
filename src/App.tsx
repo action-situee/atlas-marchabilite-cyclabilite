@@ -134,7 +134,6 @@ export default function App() {
     } else {
       setSelectedAttribute(key);
       setSelectedClass(null); // Désélectionner la classe si un attribut est sélectionné
-      setColorMode('linear');
     }
   };
 

@@ -51,6 +51,17 @@ type SpatialUnit = 'segment' | 'carreau200';
 type ProveloQualificationKey = 'rustineDor' | 'pneuCreuve';
 
 type ProveloQualificationState = Record<ProveloQualificationKey, boolean>;
+type RenderedValueMapper = (key: string, value: unknown) => number | null;
+type ThresholdStats = DataStats & { count?: number };
+interface AttributeThresholdScale {
+  thresholds?: Record<string, number[]>;
+  stats?: Record<string, ThresholdStats>;
+}
+type AttributeThresholdByScale = Partial<Record<AtlasScale, AttributeThresholdScale>>;
+type AttributeThresholdByTerritory = Partial<Record<AnalysisTerritory, AttributeThresholdByScale>>;
+interface AttributeThresholdManifest {
+  modes?: Partial<Record<AtlasMode, AttributeThresholdByTerritory>>;
+}
 
 interface HoveredAtlasFeature {
   id: unknown;
@@ -86,6 +97,8 @@ const DEFAULT_PERIMETER_SOURCE_LAYER = 'canton_perimeter';
 const DEFAULT_FAISCEAU_GAILLARD_GEOJSON_URL = '/data/perimeter/f3_perimetre_arrondi.geojson';
 const DEFAULT_FAISCEAU_STJULIEN_GEOJSON_URL = '/data/perimeter/f4_perimetre_arrondi.geojson';
 const DEFAULT_PROVELO_GEOJSON_URL = '/data/perimeter/points_noirs_provelo.geojson';
+const DEFAULT_ATTRIBUTE_THRESHOLDS_URL = '/data/attribute_thresholds.json';
+const TILE_CACHE_KEY_PARAM = 'atlas_tiles_version';
 const PROVELO_QUALIFICATIONS: Record<ProveloQualificationKey, { value: string; label: string; color: string }> = {
   rustineDor: { value: "rustine d'or", label: "Rustine d'or", color: '#D69E1E' },
   pneuCreuve: { value: 'pneu creuve', label: 'Pneu crevé', color: '#A83A32' }
@@ -173,6 +186,11 @@ export function Map({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const scaleHostRef = useRef<HTMLDivElement>(null);
+  const modeRef = useRef<AtlasMode>(mode);
+  const territoryRef = useRef<AnalysisTerritory>(territory);
+  const selectedAttributeRef = useRef<string | null>(selectedAttribute);
+  const selectedClassRef = useRef<string | null>(selectedClass);
+  const colorModeRef = useRef<'linear' | 'quantile'>(colorMode);
   const lastModeRef = useRef<AtlasMode>(mode);
   const lastTerritoryRef = useRef<AnalysisTerritory>(territory);
   const scaleRef = useRef<AtlasScale>(scale);
@@ -198,13 +216,14 @@ export function Map({
   const loadingTimeoutRef = useRef<number | null>(null);
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
+  const thresholdManifestRef = useRef<AttributeThresholdManifest | null>(null);
+  const thresholdManifestLoadedRef = useRef(false);
   const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
   const proveloOverviewDataRef = useRef<{ shapes: any } | null>(null);
 
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
   const attrKeys = getAttributeKeys(mode);
-  const classFieldMap = getClassFieldMap(mode);
   const env = import.meta.env as Record<string, string | undefined>;
   const mapboxToken = env.VITE_MAPBOX_TOKEN || '';
 
@@ -212,6 +231,8 @@ export function Map({
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [quantileMap, setQuantileMap] = useState<Record<string, number[]>>({});
+  const [thresholdManifest, setThresholdManifest] = useState<AttributeThresholdManifest | null>(null);
+  const [thresholdManifestLoaded, setThresholdManifestLoaded] = useState(false);
   const [loadingStage, setLoadingStage] = useState<'initial' | 'tiles' | 'quantiles' | 'distribution' | 'done'>('initial');
   const [loadingDetail, setLoadingDetail] = useState('');
   const [attributeStats, setAttributeStats] = useState<Record<string, DataStats>>({});
@@ -227,7 +248,12 @@ export function Map({
   const [cameraDebug, setCameraDebug] = useState<CameraState>(cameraStateRef.current);
   const [cursorDebug, setCursorDebug] = useState<{ lng: number; lat: number } | null>(null);
 
+  modeRef.current = mode;
+  territoryRef.current = territory;
   scaleRef.current = scale;
+  selectedAttributeRef.current = selectedAttribute;
+  selectedClassRef.current = selectedClass;
+  colorModeRef.current = colorMode;
   hoverSegmentRef.current = onHoverSegment;
   distributionRequestRef.current = onDistributionRequest;
   showDistributionRef.current = showDistribution;
@@ -235,6 +261,8 @@ export function Map({
   showPerimeterRef.current = showPerimeter;
   showCorridorMaskOverviewRef.current = showCorridorMaskOverview;
   proveloQualificationStateRef.current = proveloQualificationState;
+  thresholdManifestRef.current = thresholdManifest;
+  thresholdManifestLoadedRef.current = thresholdManifestLoaded;
 
   const normalizePmtilesUrl = (url: string) => {
     if (!url) return '';
@@ -243,6 +271,20 @@ export function Map({
     if (url.startsWith('/')) return `pmtiles://${url}`;
     return `pmtiles:///${url}`;
   };
+
+  const appendTileCacheKey = (url: string) => {
+    const cacheKey = (env.VITE_TILES_VERSION || env.VITE_PM_TILES_VERSION || '').trim();
+    if (!url || !cacheKey || url.includes(`${TILE_CACHE_KEY_PARAM}=`)) return url;
+
+    const hashIndex = url.indexOf('#');
+    const baseUrl = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+    const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
+    const joiner = baseUrl.includes('?') ? '&' : '?';
+
+    return `${baseUrl}${joiner}${TILE_CACHE_KEY_PARAM}=${encodeURIComponent(cacheKey)}${hash}`;
+  };
+
+  const resolvePmtilesUrl = (url: string) => normalizePmtilesUrl(appendTileCacheKey(url));
 
   const resolveEnvValue = (keys: string[]) => {
     const key = keys.find((candidate) => Boolean(env[candidate]));
@@ -332,7 +374,7 @@ export function Map({
       '';
 
     return {
-      url: tilejsonUrl || normalizePmtilesUrl(pmtilesUrl),
+      url: tilejsonUrl || resolvePmtilesUrl(pmtilesUrl),
       sourceLayer: resolveEnvValue(sourceConfig.sourceLayerEnvKeys) || sourceConfig.defaultSourceLayer
     };
   };
@@ -342,7 +384,7 @@ export function Map({
     const pmtilesUrl = env.VITE_PM_TILES_PERIMETER || DEFAULT_PERIMETER_PMTILES;
 
     return {
-      url: tilejsonUrl || normalizePmtilesUrl(pmtilesUrl),
+      url: tilejsonUrl || resolvePmtilesUrl(pmtilesUrl),
       sourceLayer: env.VITE_PERIMETER_SOURCE_LAYER || DEFAULT_PERIMETER_SOURCE_LAYER
     };
   };
@@ -356,6 +398,10 @@ export function Map({
 
   const resolveProveloGeoJsonUrl = () => {
     return env.VITE_PROVELO_GEOJSON_URL || DEFAULT_PROVELO_GEOJSON_URL;
+  };
+
+  const resolveAttributeThresholdsUrl = () => {
+    return appendTileCacheKey(env.VITE_ATTRIBUTE_THRESHOLDS_URL || DEFAULT_ATTRIBUTE_THRESHOLDS_URL);
   };
 
   const getActiveProveloQualificationValues = (
@@ -409,15 +455,46 @@ export function Map({
     return thresholds;
   };
 
-  const collectRenderedValuesByAttr = (map: any, layerId: string, keys: Set<string> = attrKeys) => {
+  const getFieldFavorable = (field: string, currentMode: AtlasMode = modeRef.current) => {
+    const currentModeConfig = MODE_CONFIGS[currentMode];
+    if (field === currentModeConfig.indexField) return true;
+
+    const classDef = currentModeConfig.classes.find((candidate) => candidate.field === field);
+    if (classDef) return classDef.favorable;
+
+    for (const candidateClass of currentModeConfig.classes) {
+      const attribute = candidateClass.attributes.find((candidate) => candidate.technicalName === field);
+      if (attribute) return attribute.favorable ?? candidateClass.favorable;
+    }
+
+    return true;
+  };
+
+  const toColorNumeric = (key: string, value: unknown): number | null => {
+    const numericValue = toNumeric(value);
+    if (numericValue === null || numericValue < 0 || numericValue > 1) return null;
+    return getFieldFavorable(key) ? numericValue : 1 - numericValue;
+  };
+
+  const toRawRenderedNumeric = (_key: string, value: unknown): number | null => {
+    const numericValue = toNumeric(value);
+    return numericValue !== null && numericValue >= 0 && numericValue <= 1 ? numericValue : null;
+  };
+
+  const collectRenderedValuesByAttr = (
+    map: any,
+    layerId: string,
+    keys: Set<string> = attrKeys,
+    valueMapper: RenderedValueMapper = toRawRenderedNumeric
+  ) => {
     const features = map.queryRenderedFeatures(undefined, { layers: [layerId] });
     const valuesByAttr: Record<string, number[]> = {};
 
     for (const feature of features) {
       const props = feature.properties || {};
       for (const [key, value] of Object.entries(props)) {
-        const numericValue = toNumeric(value);
-        if (keys.has(key) && numericValue !== null && numericValue >= 0 && numericValue <= 1) {
+        const numericValue = keys.has(key) ? valueMapper(key, value) : null;
+        if (numericValue !== null) {
           if (!valuesByAttr[key]) valuesByAttr[key] = [];
           valuesByAttr[key].push(numericValue);
         }
@@ -427,10 +504,107 @@ export function Map({
     return valuesByAttr;
   };
 
-  const getQuantileThresholdsForAttr = (attr: string, thresholdsOverride?: number[]) => {
+  const getQuantileMapKey = (layerId: string, attr: string) => `${layerId}::${attr}`;
+
+  const getQuantileLayerId = (map: any = mapRef.current) => {
+    return map ? getAnalyticsLayerId(map) : getLayerIdForScale(displayScaleRef.current);
+  };
+
+  const getThresholdManifestScale = (
+    map: any = mapRef.current,
+    currentMode: AtlasMode = modeRef.current,
+    currentTerritory: AnalysisTerritory = territoryRef.current,
+    currentScale: AtlasScale = map ? getDisplayScale(map) : displayScaleRef.current
+  ) => thresholdManifestRef.current?.modes?.[currentMode]?.[currentTerritory]?.[currentScale] || null;
+
+  const getPrecomputedThresholdsForAttr = (attr: string, map: any = mapRef.current, currentScale?: AtlasScale) => {
+    return getThresholdManifestScale(
+      map,
+      modeRef.current,
+      territoryRef.current,
+      currentScale || (map ? getDisplayScale(map) : displayScaleRef.current)
+    )?.thresholds?.[attr] || null;
+  };
+
+  const getPrecomputedStatsForMap = (map: any = mapRef.current): Record<string, DataStats> | null => {
+    const stats = getThresholdManifestScale(map)?.stats;
+    if (!stats) return null;
+
+    return Object.fromEntries(
+      Object.entries(stats).map(([key, value]) => [
+        key,
+        {
+          min: value.min,
+          max: value.max,
+          mean: value.mean
+        }
+      ])
+    );
+  };
+
+  const applyPrecomputedStatsForMap = (map: any = mapRef.current) => {
+    const stats = getPrecomputedStatsForMap(map);
+    if (!stats) return false;
+
+    setAttributeStats(stats);
+    onStatsUpdate?.(stats);
+    return true;
+  };
+
+  const getQuantileThresholdsForAttr = (attr: string, thresholdsOverride?: number[], map: any = mapRef.current) => {
     if (thresholdsOverride && thresholdsOverride.length > 0) return thresholdsOverride;
-    const thresholds = quantileMap[attr];
+    const precomputedThresholds = getPrecomputedThresholdsForAttr(attr, map);
+    if (precomputedThresholds) return precomputedThresholds;
+    const layerId = getQuantileLayerId(map);
+    const thresholds = quantileMap[getQuantileMapKey(layerId, attr)] || quantileMap[attr];
     return thresholds && thresholds.length > 0 ? thresholds : VALUE_THRESHOLDS;
+  };
+
+  const getQuantileThresholdsForScaleAttr = (
+    attr: string,
+    currentScale: AtlasScale,
+    map: any = mapRef.current,
+    thresholdsOverride?: number[]
+  ) => {
+    if (thresholdsOverride && currentScale === getDisplayScale(map)) return thresholdsOverride;
+
+    const precomputedThresholds = getPrecomputedThresholdsForAttr(attr, map, currentScale);
+    if (precomputedThresholds) return precomputedThresholds;
+
+    const layerId = getLayerIdForScale(currentScale);
+    const thresholds = quantileMap[getQuantileMapKey(layerId, attr)] || quantileMap[attr];
+    return thresholds && thresholds.length > 0 ? thresholds : VALUE_THRESHOLDS;
+  };
+
+  const thresholdsEqual = (left?: number[], right?: number[]) => {
+    if (!left || !right || left.length !== right.length) return false;
+    return left.every((value, index) => value === right[index]);
+  };
+
+  const rememberQuantileThresholds = (layerId: string, attr: string, thresholds: number[]) => {
+    const key = getQuantileMapKey(layerId, attr);
+    setQuantileMap((previous) => {
+      if (thresholdsEqual(previous[key], thresholds)) return previous;
+      return { ...previous, [key]: thresholds };
+    });
+  };
+
+  const computeRenderedQuantileThresholdsForAttr = (map: any, layerId: string, attr: string) => {
+    if (!map.getLayer(layerId)) return null;
+    const values = collectRenderedValuesByAttr(map, layerId, new Set([attr]), toColorNumeric)[attr] || [];
+    return computeQuantileThresholds(values);
+  };
+
+  const getFreshQuantileThresholdsForAttr = (attr: string, map: any = mapRef.current) => {
+    const precomputedThresholds = getPrecomputedThresholdsForAttr(attr, map);
+    if (precomputedThresholds) return precomputedThresholds;
+    if (!map) return getQuantileThresholdsForAttr(attr);
+    const layerId = getQuantileLayerId(map);
+    const thresholds = computeRenderedQuantileThresholdsForAttr(map, layerId, attr);
+    if (!thresholds) return getQuantileThresholdsForAttr(attr, undefined, map);
+
+    rememberQuantileThresholds(layerId, attr, thresholds);
+    return thresholds;
   };
 
   const hasCarreau200Source = (
@@ -1151,6 +1325,10 @@ export function Map({
 
     if (previousDisplayScale !== nextDisplayScale) {
       hoverSegmentRef.current(null);
+      const attr = activeAttribute();
+      if (colorModeRef.current === 'quantile' && !getPrecomputedThresholdsForAttr(attr, map, nextDisplayScale)) {
+        refreshActiveRampForMap(map);
+      }
     }
 
     return nextDisplayScale;
@@ -1186,7 +1364,7 @@ export function Map({
 
   const getDisplayScale = (map: any = mapRef.current) => {
     if (!map) return currentScale();
-    return getScaleForZoom(map.getZoom(), currentScale(), mode, territory);
+    return getScaleForZoom(map.getZoom(), currentScale(), modeRef.current, territoryRef.current);
   };
 
   const getAnalyticsLayerId = (map: any = mapRef.current) => {
@@ -1549,32 +1727,64 @@ export function Map({
 
     const runAnalytics = () => {
       if (loadRequestRef.current !== requestId) return;
+      if (!thresholdManifestLoadedRef.current) {
+        setLoadingStage('quantiles');
+        setLoadingDetail('Chargement des seuils précalculés');
+        setLoadingProgress((previous) => Math.max(previous, 78));
+        window.setTimeout(runAnalytics, 40);
+        return;
+      }
 
       const attr = activeAttribute();
       const analyticsLayerId = getAnalyticsLayerId(map);
-      const valuesByAttr = collectRenderedValuesByAttr(map, analyticsLayerId);
+      const precomputedScale = getThresholdManifestScale(map, currentMode, currentTerritory);
+
+      if (precomputedScale?.thresholds) {
+        const stats = getPrecomputedStatsForMap(map);
+        if (stats) {
+          setAttributeStats(stats);
+          onStatsUpdate?.(stats);
+        }
+
+        const activeThresholds = precomputedScale.thresholds[attr] || VALUE_THRESHOLDS;
+        applyRamp(attr, colorModeRef.current === 'quantile' ? activeThresholds : undefined);
+
+        if (showDistributionRef.current && distributionRequestRef.current) {
+          distributionRequestRef.current(
+            computeDistribution(attr, colorModeRef.current === 'quantile' ? activeThresholds : VALUE_THRESHOLDS)
+          );
+        }
+
+        initialAnalyticsDoneRef.current = true;
+        preloadAdjacentHeaders(currentMode, currentTerritory);
+        finishLoading(requestId, 'Seuils précalculés chargés');
+        return;
+      }
+
+      const rawValuesByAttr = collectRenderedValuesByAttr(map, analyticsLayerId);
+      const colorValuesByAttr = collectRenderedValuesByAttr(map, analyticsLayerId, attrKeys, toColorNumeric);
 
       setLoadingStage('quantiles');
       setLoadingDetail('Calcul des quantiles');
       setLoadingProgress((previous) => Math.max(previous, 82));
 
       const nextQuantileMap: Record<string, number[]> = {};
-      for (const [key, values] of Object.entries(valuesByAttr)) {
+      for (const [key, values] of Object.entries(colorValuesByAttr)) {
         const thresholds = computeQuantileThresholds(values);
-        if (thresholds) nextQuantileMap[key] = thresholds;
+        if (thresholds) nextQuantileMap[getQuantileMapKey(analyticsLayerId, key)] = thresholds;
       }
 
       setQuantileMap(nextQuantileMap);
-      const activeThresholds = nextQuantileMap[attr] || VALUE_THRESHOLDS;
+      const activeThresholds = nextQuantileMap[getQuantileMapKey(analyticsLayerId, attr)] || VALUE_THRESHOLDS;
 
       const stats: Record<string, DataStats> = {};
-      for (const [key, values] of Object.entries(valuesByAttr)) {
+      for (const [key, values] of Object.entries(rawValuesByAttr)) {
         stats[key] = computeStats(values as number[]);
       }
       setAttributeStats(stats);
       onStatsUpdate?.(stats);
 
-      applyRamp(attr, colorMode === 'quantile' ? activeThresholds : undefined);
+      applyRamp(attr, colorModeRef.current === 'quantile' ? activeThresholds : undefined);
 
       setLoadingStage('distribution');
       setLoadingDetail('Mise à jour des panneaux');
@@ -1582,7 +1792,7 @@ export function Map({
 
       if (showDistributionRef.current && distributionRequestRef.current) {
         distributionRequestRef.current(
-          computeDistribution(attr, colorMode === 'quantile' ? activeThresholds : VALUE_THRESHOLDS)
+          computeDistribution(attr, colorModeRef.current === 'quantile' ? activeThresholds : VALUE_THRESHOLDS)
         );
       }
 
@@ -1614,19 +1824,12 @@ export function Map({
       handledIdle = true;
       clearLoadingArtifacts();
 
-      const attr = activeAttribute();
-      const thresholds = colorMode === 'quantile' ? getQuantileThresholdsForAttr(attr) : undefined;
-      applyRamp(attr, thresholds);
       syncScaleFromMapZoom(map, currentScale(), currentMode, currentTerritory);
 
       if (recomputeAnalytics) {
         runAnalytics();
       } else {
-        if (showDistributionRef.current && distributionRequestRef.current) {
-          distributionRequestRef.current(
-            computeDistribution(attr, colorMode === 'quantile' ? getQuantileThresholdsForAttr(attr) : VALUE_THRESHOLDS)
-          );
-        }
+        refreshActiveRampForMap(map);
         preloadAdjacentHeaders(currentMode, currentTerritory);
         finishLoading(requestId);
       }
@@ -1713,6 +1916,29 @@ export function Map({
   const isNorthAligned = Math.min(normalizedBearing, 360 - normalizedBearing) < 1;
   const isPerspective = pitch > 10;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(resolveAttributeThresholdsUrl(), { cache: 'no-cache' })
+      .then((response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<AttributeThresholdManifest>;
+      })
+      .then((manifest) => {
+        if (!cancelled) setThresholdManifest(manifest);
+      })
+      .catch(() => {
+        if (!cancelled) setThresholdManifest(null);
+      })
+      .finally(() => {
+        if (!cancelled) setThresholdManifestLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Initialize MapLibre and recreate it when the basemap changes.
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -1796,6 +2022,10 @@ export function Map({
 
     const persistCamera = () => {
       syncCameraState(map);
+      const attr = activeAttribute();
+      if (colorModeRef.current === 'quantile' && !getPrecomputedThresholdsForAttr(attr, map)) {
+        window.requestAnimationFrame(() => refreshActiveRampForMap(map));
+      }
     };
 
     const handleResize = () => {
@@ -2006,23 +2236,31 @@ export function Map({
 
   // Compute active attribute key from UI state
   function activeAttribute(): string {
-    if (selectedAttribute) {
-      const parts = selectedAttribute.split('.');
+    const currentSelectedAttribute = selectedAttributeRef.current;
+    const currentSelectedClass = selectedClassRef.current;
+    const currentMode = modeRef.current;
+    const currentModeConfig = MODE_CONFIGS[currentMode];
+    const currentClassFieldMap = getClassFieldMap(currentMode);
+
+    if (currentSelectedAttribute) {
+      const parts = currentSelectedAttribute.split('.');
       if (parts.length === 2) {
         return parts[1];
       }
       return parts[0];
     }
-    if (selectedClass) {
-      return classFieldMap[selectedClass] || modeConfig.indexField;
+    if (currentSelectedClass) {
+      return currentClassFieldMap[currentSelectedClass] || currentModeConfig.indexField;
     }
-    return modeConfig.indexField;
+    return currentModeConfig.indexField;
   }
 
   function colorRamp(attr: string, overrideThresholds?: number[]) {
-    const input = ['coalesce', ['to-number', ['get', attr]], 0];
+    const rawInput = ['coalesce', ['to-number', ['get', attr]], 0];
+    const input = getFieldFavorable(attr) ? rawInput : ['-', 1, rawInput];
+    const currentColorMode = colorModeRef.current;
 
-    if (colorMode === 'linear') {
+    if (currentColorMode === 'linear') {
       const expr: any[] = ['step', input, VALUE_PALETTE[0]];
       VALUE_THRESHOLDS.forEach((threshold, index) => {
         expr.push(threshold, VALUE_PALETTE[index + 1]);
@@ -2039,14 +2277,31 @@ export function Map({
   }
 
   function applyRampToMap(map: any, attr: string, thresholdsOverride?: number[]) {
-    const ramp = colorRamp(attr, thresholdsOverride);
     if (map.getLayer('segments-layer')) {
+      const ramp = colorRamp(
+        attr,
+        colorModeRef.current === 'quantile'
+          ? getQuantileThresholdsForScaleAttr(attr, 'segment', map, thresholdsOverride)
+          : undefined
+      );
       map.setPaintProperty('segments-layer', 'line-color', ramp as any);
     }
     if (map.getLayer('carreau200-fill')) {
+      const ramp = colorRamp(
+        attr,
+        colorModeRef.current === 'quantile'
+          ? getQuantileThresholdsForScaleAttr(attr, 'carreau200', map, thresholdsOverride)
+          : undefined
+      );
       map.setPaintProperty('carreau200-fill', 'fill-color', ramp as any);
     }
     if (map.getLayer('zones-fill')) {
+      const ramp = colorRamp(
+        attr,
+        colorModeRef.current === 'quantile'
+          ? getQuantileThresholdsForScaleAttr(attr, 'zoneTrafic', map, thresholdsOverride)
+          : undefined
+      );
       map.setPaintProperty('zones-fill', 'fill-color', ramp as any);
     }
   }
@@ -2057,12 +2312,26 @@ export function Map({
     applyRampToMap(map, attr, thresholdsOverride);
     if (onDebugParamsChange) {
       const thresholds =
-        colorMode === 'linear'
+        colorModeRef.current === 'linear'
           ? VALUE_THRESHOLDS
           : thresholdsOverride && thresholdsOverride.length
             ? thresholdsOverride
             : getQuantileThresholdsForAttr(attr);
       onDebugParamsChange({ attr, layerId: getLayerIdForScale(getDisplayScale(map)), thresholds });
+    }
+  }
+
+  function refreshActiveRampForMap(map: any) {
+    applyPrecomputedStatsForMap(map);
+
+    const attr = activeAttribute();
+    const thresholds = colorModeRef.current === 'quantile' ? getFreshQuantileThresholdsForAttr(attr, map) : undefined;
+    applyRamp(attr, thresholds);
+
+    if (showDistributionRef.current && distributionRequestRef.current) {
+      distributionRequestRef.current(
+        computeDistribution(attr, colorModeRef.current === 'quantile' ? thresholds || VALUE_THRESHOLDS : VALUE_THRESHOLDS)
+      );
     }
   }
 
@@ -2750,7 +3019,7 @@ export function Map({
       applyRampToMap(
         exportMap,
         activeAttribute(),
-        colorMode === 'quantile' ? getQuantileThresholdsForAttr(activeAttribute()) : undefined
+        colorModeRef.current === 'quantile' ? getQuantileThresholdsForAttr(activeAttribute()) : undefined
       );
       applyExportScalePaint(exportMap, sourceCamera.zoom, scale);
       reorderMapLayers(exportMap, mode, scale);
@@ -2806,7 +3075,7 @@ export function Map({
     let min = Infinity;
     let max = -Infinity;
     for (const feature of features) {
-      const value = toNumeric(feature.properties?.[attr]);
+      const value = toColorNumeric(attr, feature.properties?.[attr]);
       if (value !== null) {
         total += 1;
         sum += value;
@@ -2820,7 +3089,7 @@ export function Map({
     }
     if (total === 0) return null;
 
-    const thresholds = colorMode === 'linear' ? VALUE_THRESHOLDS : getQuantileThresholdsForAttr(attr, thresholdsOverride);
+    const thresholds = colorModeRef.current === 'linear' ? VALUE_THRESHOLDS : getQuantileThresholdsForAttr(attr, thresholdsOverride);
     for (let i = 0; i < BIN_COUNT; i += 1) {
       const center = (bins[i].min + bins[i].max) / 2;
       bins[i].color = colorForValue(center, thresholds);
@@ -2946,14 +3215,7 @@ export function Map({
       if (loadRequestRef.current !== requestId) return;
       if (!map.getLayer(layerId) || !areTrackedSourcesLoaded() || !map.areTilesLoaded()) return;
 
-      const attr = activeAttribute();
-      const thresholds = colorMode === 'quantile' ? getQuantileThresholdsForAttr(attr) : undefined;
-      applyRamp(attr, thresholds);
-      if (showDistributionRef.current) {
-        distributionRequestRef.current?.(
-          computeDistribution(attr, colorMode === 'quantile' ? getQuantileThresholdsForAttr(attr) : VALUE_THRESHOLDS)
-        );
-      }
+      refreshActiveRampForMap(map);
       finishLoading(requestId, `${scaleLabel} prêt`);
     };
 
@@ -2985,25 +3247,26 @@ export function Map({
 
     updateScaleProgress();
     requestAnimationFrame(handleIdle);
-  }, [mapLoaded, scale, mode, territory, colorMode, quantileMap]);
+  }, [mapLoaded, scale, mode, territory, colorMode, quantileMap, thresholdManifest]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
     const attr = activeAttribute();
-    const thresholds = colorMode === 'quantile' ? getQuantileThresholdsForAttr(attr) : undefined;
+    const thresholds = colorModeRef.current === 'quantile' ? getFreshQuantileThresholdsForAttr(attr, map) : undefined;
     applyRamp(attr, thresholds);
 
     if (!showDistributionRef.current) return;
     const timer = window.setTimeout(() => {
       distributionRequestRef.current?.(
-        computeDistribution(attr, colorMode === 'quantile' ? thresholds || VALUE_THRESHOLDS : VALUE_THRESHOLDS)
+        computeDistribution(attr, colorModeRef.current === 'quantile' ? thresholds || VALUE_THRESHOLDS : VALUE_THRESHOLDS)
       );
     }, 100);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [mapLoaded, selectedAttribute, selectedClass, mode, scale, colorMode, showDistribution, quantileMap]);
+  }, [mapLoaded, selectedAttribute, selectedClass, mode, scale, colorMode, showDistribution, quantileMap, thresholdManifest]);
 
   function buildScoresFromProperties(props: Record<string, unknown>): AtlasScores {
     const normalizeValue = (rawValue: unknown, attrName: string): number => {

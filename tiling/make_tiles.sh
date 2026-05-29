@@ -333,4 +333,7 @@ build_vector_tiles \
   -Z0 -z16 \
   --no-tile-stats
 
+echo "➡️  Precompute attribute thresholds"
+node "$ROOT_DIR/tiling/compute_quantiles.js"
+
 echo "   Dev server will serve PMTiles at /tiles/*.pmtiles"

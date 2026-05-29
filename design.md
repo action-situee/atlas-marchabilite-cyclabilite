@@ -95,7 +95,7 @@ Les valeurs sont normalisées entre 0 et 1. La palette de lecture va du rouge au
 La palette est discrète, avec des seuils de `0.1` à `1.0`. Deux modes de coloration sont disponibles dans la légende :
 
 - `Linéaire` : seuils fixes définis dans `src/colors.ts`.
-- `Quantile` : seuils recalculés à partir des entités rendues dans la carte.
+- `Quantile` : seuils précalculés par mode, territoire, échelle et attribut dans `public/data/attribute_thresholds.json`, généré par `npm run tile` ou `npm run tile:thresholds`.
 
 Le panneau latéral utilise en plus des barres vertes ou rouges pour distinguer les attributs favorables et défavorables.
 
@@ -310,4 +310,4 @@ Les règles principales sont :
 
 4. Le panneau analytique n'existe pas sur mobile. La lecture mobile est donc principalement cartographique, avec peu d'analyse détaillée.
 
-5. Les seuils quantiles sont calculés à partir des entités rendues dans la vue courante. Ils peuvent donc varier selon le cadrage et le zoom.
+5. Les seuils quantiles sont précalculés sur les données de tuilage. Ils sont donc stables à cadrage constant et ne varient plus à chaque déplacement de carte ; si le manifeste est absent, l'application repasse sur un calcul dynamique de secours.

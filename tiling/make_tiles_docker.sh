@@ -8,9 +8,10 @@ ROOT_DIR="$(cd "$(dirname "$0")" && cd .. && pwd)"
 RAW_DIR="$ROOT_DIR/data_raw"
 OUT_DIR="$ROOT_DIR/data_tiles"
 PUB_TILES_DIR="$ROOT_DIR/public/tiles"
+PUB_DATA_DIR="$ROOT_DIR/public/data"
 TMP_DIR="$OUT_DIR/tmp"
 
-mkdir -p "$OUT_DIR" "$TMP_DIR" "$PUB_TILES_DIR"
+mkdir -p "$OUT_DIR" "$TMP_DIR" "$PUB_TILES_DIR" "$PUB_DATA_DIR"
 
 run_gdal(){
   docker run --rm -u $(id -u):$(id -g) -v "$ROOT_DIR:/work" ghcr.io/osgeo/gdal:alpine-small-latest \
@@ -311,5 +312,8 @@ build_vector_tiles \
   "canton_perimeter.pmtiles" \
   -Z0 -z16 \
   --no-tile-stats
+
+echo "➡️  Precompute attribute thresholds"
+node "$ROOT_DIR/tiling/compute_quantiles.js"
 
 echo "✅ All requested tiles were built into $PUB_TILES_DIR"

@@ -7,6 +7,7 @@ compatibility_date = "2026-03-14"
 
 [vars]
 VITE_SITE_URL = "https://active.situee.ch"
+VITE_TILES_VERSION = "20260529-tiles"
 VITE_PM_TILES_WALK_SEGMENT = "https://pub-1aeb7e0af59940a9bf635336182c8eaa.r2.dev/walk_agglo_segment.pmtiles"
 VITE_PM_TILES_URL = "https://pub-1aeb7e0af59940a9bf635336182c8eaa.r2.dev/walk_agglo_segment.pmtiles"
 VITE_PM_TILES_CARREAU200 = "https://pub-1aeb7e0af59940a9bf635336182c8eaa.r2.dev/walk_agglo_carreau200.pmtiles"

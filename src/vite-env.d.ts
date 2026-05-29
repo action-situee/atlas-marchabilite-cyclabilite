@@ -39,6 +39,9 @@ interface ImportMetaEnv {
 	readonly VITE_PM_TILES_BIKE_SEGMENT?: string;
 	readonly VITE_PM_TILES_BIKE_CARREAU200?: string;
 	readonly VITE_PM_TILES_PERIMETER?: string;
+	readonly VITE_TILES_VERSION?: string;
+	readonly VITE_PM_TILES_VERSION?: string;
+	readonly VITE_ATTRIBUTE_THRESHOLDS_URL?: string;
 	readonly VITE_MAP_STYLE?: string;
 	readonly VITE_MAP_STYLE_VOYAGER?: string;
 	readonly VITE_MAP_STYLE_SWISS_LIGHT?: string;

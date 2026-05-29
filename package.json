@@ -62,6 +62,7 @@
           "build": "vite build",
           "postbuild": "node scripts/generate-seo.mjs",
           "tile": "bash ./tiling/make_tiles.sh",
+          "tile:thresholds": "node ./tiling/compute_quantiles.js",
           "tile:clean": "bash ./tiling/clean_data_tiles.sh",
           "tile:docker": "bash ./tiling/make_tiles_docker.sh",
           "martin": "bash ./tiling/run_martin.sh"
