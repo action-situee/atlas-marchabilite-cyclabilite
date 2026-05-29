@@ -455,25 +455,10 @@ export function Map({
     return thresholds;
   };
 
-  const getFieldFavorable = (field: string, currentMode: AtlasMode = modeRef.current) => {
-    const currentModeConfig = MODE_CONFIGS[currentMode];
-    if (field === currentModeConfig.indexField) return true;
-
-    const classDef = currentModeConfig.classes.find((candidate) => candidate.field === field);
-    if (classDef) return classDef.favorable;
-
-    for (const candidateClass of currentModeConfig.classes) {
-      const attribute = candidateClass.attributes.find((candidate) => candidate.technicalName === field);
-      if (attribute) return attribute.favorable ?? candidateClass.favorable;
-    }
-
-    return true;
-  };
-
-  const toColorNumeric = (key: string, value: unknown): number | null => {
+  const toColorNumeric = (_key: string, value: unknown): number | null => {
     const numericValue = toNumeric(value);
     if (numericValue === null || numericValue < 0 || numericValue > 1) return null;
-    return getFieldFavorable(key) ? numericValue : 1 - numericValue;
+    return numericValue;
   };
 
   const toRawRenderedNumeric = (_key: string, value: unknown): number | null => {
@@ -2257,7 +2242,7 @@ export function Map({
 
   function colorRamp(attr: string, overrideThresholds?: number[]) {
     const rawInput = ['coalesce', ['to-number', ['get', attr]], 0];
-    const input = getFieldFavorable(attr) ? rawInput : ['-', 1, rawInput];
+    const input = rawInput;
     const currentColorMode = colorModeRef.current;
 
     if (currentColorMode === 'linear') {

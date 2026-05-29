@@ -56,20 +56,6 @@ function getAttributeKeys(config) {
   ]);
 }
 
-function getFieldFavorable(config, field) {
-  if (field === config.indexField) return true;
-
-  const classDef = config.classes.find((candidate) => candidate.field === field);
-  if (classDef) return classDef.favorable;
-
-  for (const candidateClass of config.classes) {
-    const attribute = candidateClass.attributes.find((candidate) => candidate.technicalName === field);
-    if (attribute) return attribute.favorable ?? candidateClass.favorable;
-  }
-
-  return true;
-}
-
 function toNumeric(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -148,7 +134,7 @@ async function readDataset(filePath, config) {
       if (!colorValues[key]) colorValues[key] = [];
 
       rawValues[key].push(rawValue);
-      colorValues[key].push(getFieldFavorable(config, key) ? rawValue : 1 - rawValue);
+      colorValues[key].push(rawValue);
     }
   }
 

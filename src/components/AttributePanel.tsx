@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { getPaletteColor, VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
+import { VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
 import { ChevronRight } from 'lucide-react';
 import { SpiderChart } from './SpiderChart';
 import { useState } from 'react';
@@ -56,7 +56,7 @@ export function AttributePanel({
   const theme = modeConfig.theme;
   const FAVORABLE_COLOR = '#22c55e';
   const UNFAVORABLE_COLOR = '#ef4444';
-  const useFavorableBars = mode === 'bikeability' || mode === 'walkability';
+  const ATTRIBUTE_BAR_COLOR = '#5A5A5A';
   const orderedClasses = modeConfig.classOrder
     .map((className) => {
       const classInfo = attributeData[className];
@@ -181,11 +181,8 @@ export function AttributePanel({
                             const isAttrSelected = selectedAttribute === attrKey;
                             const isOtherAttrSelected = hasSelection && !isAttrSelected;
                             const isFavorable = attr.favorable ?? classInfo.favorable;
-                            const barColor = useFavorableBars
-                              ? (isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR)
-                              : getPaletteColor(attr.value);
                             const polarityColor = isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR;
-                            const barValue = isFavorable ? attr.value : 1 - attr.value;
+                            const barValue = attr.value;
                             
                             return (
                               <div 
@@ -226,8 +223,8 @@ export function AttributePanel({
                                       initial={{ width: 0 }}
                                       animate={{ width: `${barValue * 100}%` }}
                                       transition={{ duration: 0.4, delay: index * 0.03 }}
-                                      className={`absolute inset-y-0 rounded-full ${isFavorable ? 'left-0' : 'right-0'}`}
-                                      style={{ backgroundColor: barColor }}
+                                      className="absolute inset-y-0 left-0 rounded-full"
+                                      style={{ backgroundColor: ATTRIBUTE_BAR_COLOR }}
                                     />
                                   </div>
                                 </div>
