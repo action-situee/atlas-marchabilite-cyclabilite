@@ -239,7 +239,7 @@ export function Map({
   const [basemap, setBasemap] = useState<BasemapMode>('voyager');
   const [showLabels, setShowLabels] = useState(false);
   const [showPerimeter, setShowPerimeter] = useState(true);
-  const [showCorridorMaskOverview, setShowCorridorMaskOverview] = useState(true);
+  const [showCorridorMaskOverview, setShowCorridorMaskOverview] = useState(false);
   const [proveloQualificationState, setProveloQualificationState] = useState<ProveloQualificationState>(EMPTY_PROVELO_QUALIFICATIONS);
   const [isExporting, setIsExporting] = useState(false);
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
@@ -1214,6 +1214,14 @@ export function Map({
     }
   };
 
+  const moveSegmentLayersAboveWater = (map: any) => {
+    for (const layerId of ['segments-layer', 'segments-hit-area']) {
+      if (map.getLayer(layerId)) {
+        map.moveLayer(layerId);
+      }
+    }
+  };
+
   const reorderMapLayers = (
     map: any,
     currentMode: AtlasMode = mode,
@@ -1221,6 +1229,7 @@ export function Map({
   ) => {
     moveAtlasLayers(map);
     moveWaterLayersAboveAtlas(map);
+    moveSegmentLayersAboveWater(map);
     if (requestedScale !== 'segment') {
       moveTransportLayersAboveAtlas(map);
     }
