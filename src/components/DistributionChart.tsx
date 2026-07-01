@@ -1,5 +1,4 @@
 import React from 'react';
-import { VALUE_PALETTE } from '../colors';
 
 export interface DistributionBin {
   min: number;

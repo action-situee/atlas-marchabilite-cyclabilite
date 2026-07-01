@@ -5,15 +5,16 @@ interface SpiderChartProps {
   attributeData: AtlasScores;
   mode: AtlasMode;
   classOrder: string[];
+  hasActiveFeature?: boolean;
 }
 
-export function SpiderChart({ attributeData, mode, classOrder }: SpiderChartProps) {
+export function SpiderChart({ attributeData, mode, classOrder, hasActiveFeature = true }: SpiderChartProps) {
   const theme = getModeTheme(mode);
   const data = classOrder.map((className) => {
     const classInfo = attributeData[className] || { average: 0, color: '#ccc' };
     return {
       subject: className,
-      value: classInfo.average || 0,
+      value: hasActiveFeature ? classInfo.average || 0 : 0,
       fullMark: 1,
       color: classInfo.color || '#ccc'
     };
@@ -42,9 +43,9 @@ export function SpiderChart({ attributeData, mode, classOrder }: SpiderChartProp
           <Radar
             name="Score"
             dataKey="value"
-            stroke={theme.accent}
+            stroke={hasActiveFeature ? theme.accent : theme.radarGrid}
             fill={theme.accent}
-            fillOpacity={0.18}
+            fillOpacity={hasActiveFeature ? 0.18 : 0}
             strokeWidth={2}
             isAnimationActive={false}
           />

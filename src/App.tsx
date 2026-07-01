@@ -8,8 +8,10 @@ import { TerritoryToggle } from './components/TerritoryToggle';
 import { Info } from 'lucide-react';
 import type { DistributionData } from './components/DistributionChart';
 import { applySeoForMode } from './seo';
+import type { AtlasColorScale } from './colors';
 import {
   buildEmptyScores,
+  isAtlasAttributeAvailable,
   MODE_CONFIGS,
   type AnalysisTerritory,
   type AtlasDebugParams,
@@ -32,6 +34,10 @@ const DEFAULT_SCALE: AtlasScale = 'segment';
 const DEFAULT_TERRITORY_BY_MODE: Record<AtlasMode, AnalysisTerritory> = {
   walkability: 'grandGeneve',
   bikeability: 'grandGeneve'
+};
+const DEFAULT_COLOR_SCALE_BY_MODE: Record<AtlasMode, AtlasColorScale> = {
+  walkability: 'redGreen',
+  bikeability: 'blueGold'
 };
 
 const getModeFromHash = (hash: string): AtlasMode | null => {
@@ -79,8 +85,11 @@ export default function App() {
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [showDistribution, setShowDistribution] = useState(false);
   const [distributionData, setDistributionData] = useState<DistributionData | null>(null);
-  const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('linear');
+  const [colorMode, setColorMode] = useState<'linear' | 'quantile'>('quantile');
+  const [colorScale, setColorScale] = useState<AtlasColorScale>(() => DEFAULT_COLOR_SCALE_BY_MODE[getModeFromLocation(window.location)]);
   const [debugParams, setDebugParams] = useState<AtlasDebugParams | null>(null);
+  const [hasHoveredFeature, setHasHoveredFeature] = useState(false);
+  const [hoveredFeatureNote, setHoveredFeatureNote] = useState<string | null>(null);
   const modeConfig = MODE_CONFIGS[mode];
   const theme = modeConfig.theme;
   const env = import.meta.env as Record<string, string | undefined>;
@@ -128,6 +137,10 @@ export default function App() {
   };
 
   const handleSelectAttribute = (className: string, attrName: string) => {
+    const classDef = modeConfig.classes.find((candidate) => candidate.displayName === className);
+    const attributeDef = classDef?.attributes.find((attribute) => attribute.technicalName === attrName);
+    if (!attributeDef || !isAtlasAttributeAvailable(attributeDef, territory)) return;
+
     const key = `${className}.${attrName}`;
     if (selectedAttribute === key) {
       setSelectedAttribute(null);
@@ -195,8 +208,29 @@ export default function App() {
     setDistributionData(null);
     setDebugParams(null);
     setAttributeData(buildEmptyScores(mode));
+    setHasHoveredFeature(false);
+    setHoveredFeatureNote(null);
     setColorMode('quantile');
+    setColorScale(DEFAULT_COLOR_SCALE_BY_MODE[mode]);
   }, [mode]);
+
+  useEffect(() => {
+    setAttributeData(buildEmptyScores(mode));
+    setHasHoveredFeature(false);
+    setHoveredFeatureNote(null);
+  }, [mode, territory, scale]);
+
+  useEffect(() => {
+    if (!selectedAttribute) return;
+
+    const [className, attrName] = selectedAttribute.split('.');
+    const classDef = modeConfig.classes.find((candidate) => candidate.displayName === className);
+    const attributeDef = classDef?.attributes.find((attribute) => attribute.technicalName === attrName);
+
+    if (!attributeDef || !isAtlasAttributeAvailable(attributeDef, territory)) {
+      setSelectedAttribute(null);
+    }
+  }, [mode, modeConfig.classes, selectedAttribute, territory]);
 
   useEffect(() => {
     if (scale === DEFAULT_SCALE && !hasCarreau200) {
@@ -256,10 +290,12 @@ export default function App() {
             <div
               className="app-score-pill rounded-full px-4 py-2 flex items-center gap-2 border-2 shadow-sm"
               style={{ backgroundColor: theme.accentLight, borderColor: theme.accent }}
+              title={hasHoveredFeature ? undefined : 'Score disponible au survol de la carte'}
+              aria-label={hasHoveredFeature ? `Score ${globalScore.toFixed(2)}` : 'Score non disponible'}
             >
               <span className="app-score-label text-xs font-medium" style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}>Score</span>
               <span className="text-sm text-[#1A1A1A] tabular-nums font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>
-                {globalScore.toFixed(2)}
+                {hasHoveredFeature ? globalScore.toFixed(2) : '—'}
               </span>
             </div>
             
@@ -283,12 +319,18 @@ export default function App() {
         territory={territory}
         scale={scale}
         colorMode={colorMode}
+        colorScale={colorScale}
+        onColorScaleChange={setColorScale}
         showDistribution={showDistribution}
         onHoverSegment={(segment) => {
           if (segment && segment.scores) {
             setAttributeData(segment.scores);
+            setHasHoveredFeature(true);
+            setHoveredFeatureNote(segment.hoverNote ?? null);
           } else {
             setAttributeData(buildEmptyScores(mode));
+            setHasHoveredFeature(false);
+            setHoveredFeatureNote(segment?.hoverNote ?? null);
           }
         }}
         onResetScaleToDefault={resetScaleToDefault}
@@ -310,8 +352,12 @@ export default function App() {
         onToggleDistribution={() => setShowDistribution(!showDistribution)}
         scale={scale}
         mode={mode}
+        territory={territory}
+        hasActiveFeature={hasHoveredFeature}
+        hoverNote={hoveredFeatureNote}
         distributionData={distributionData}
         colorMode={colorMode}
+        colorScale={colorScale}
         onColorModeChange={setColorMode}
         debugParams={debugParams || undefined}
       />

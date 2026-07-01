@@ -2523,6 +2523,16 @@ a.mapboxgl-ctrl-logo.mapboxgl-compact {
   flex: 0 0 auto;
 }
 
+.app-score-pill {
+  justify-content: space-between;
+  min-width: 104px;
+}
+
+.app-score-pill .tabular-nums {
+  min-width: 2.5rem;
+  text-align: right;
+}
+
 .atlas-segment-button {
   align-items: center;
   min-height: 36px;
@@ -2629,6 +2639,7 @@ a.mapboxgl-ctrl-logo.mapboxgl-compact {
   }
 
   .app-score-pill {
+    min-width: 96px;
     padding-left: 12px;
     padding-right: 12px;
   }
@@ -2664,6 +2675,7 @@ a.mapboxgl-ctrl-logo.mapboxgl-compact {
 
   .app-score-pill {
     min-height: 36px;
+    min-width: 52px;
     padding-left: 10px;
     padding-right: 10px;
   }

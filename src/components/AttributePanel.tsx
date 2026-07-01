@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
+import { getColorScale, type AtlasColorScale } from '../colors';
 import { ChevronRight } from 'lucide-react';
 import { SpiderChart } from './SpiderChart';
 import { useState } from 'react';
 import { DistributionChart, type DistributionData } from './DistributionChart';
 import {
   MODE_CONFIGS,
+  isAtlasAttributeAvailable,
+  type AnalysisTerritory,
   type AtlasClassScore,
   type AtlasDebugParams,
   type AtlasMode,
@@ -27,7 +29,11 @@ interface AttributePanelProps {
   scale: AtlasScale;
   distributionData: DistributionData | null;
   colorMode: 'linear' | 'quantile';
+  colorScale: AtlasColorScale;
   mode: AtlasMode;
+  territory: AnalysisTerritory;
+  hasActiveFeature?: boolean;
+  hoverNote?: string | null;
   debugParams?: AtlasDebugParams;
   onColorModeChange?: (mode: 'linear' | 'quantile') => void;
 }
@@ -46,7 +52,11 @@ export function AttributePanel({
   scale,
   distributionData,
   colorMode,
+  colorScale,
   mode,
+  territory,
+  hasActiveFeature = true,
+  hoverNote,
   debugParams,
   onColorModeChange
 }: AttributePanelProps) {
@@ -57,6 +67,10 @@ export function AttributePanel({
   const FAVORABLE_COLOR = '#22c55e';
   const UNFAVORABLE_COLOR = '#ef4444';
   const ATTRIBUTE_BAR_COLOR = '#5A5A5A';
+  const emptyValueLabel = '—';
+  const formatPanelValue = (value: number) => hasActiveFeature ? value.toFixed(2) : emptyValueLabel;
+  const showDebugParams = Boolean(debugParams) && import.meta.env.DEV;
+  const activeColorScale = getColorScale(colorScale);
   const orderedClasses = modeConfig.classOrder
     .map((className) => {
       const classInfo = attributeData[className];
@@ -77,7 +91,12 @@ export function AttributePanel({
             <div className="text-[10px] mb-3 uppercase tracking-wider font-medium" style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}>
               Vue d'ensemble
             </div>
-            <SpiderChart attributeData={attributeData} mode={mode} classOrder={modeConfig.classOrder} />
+            <SpiderChart attributeData={attributeData} mode={mode} classOrder={modeConfig.classOrder} hasActiveFeature={hasActiveFeature} />
+            {hoverNote && (
+              <div className="mt-3 text-[9px] leading-snug" style={{ color: '#6B7280', fontFamily: 'Arial, sans-serif' }}>
+                {hoverNote}
+              </div>
+            )}
           </div>
 
           {/* Classes - Scrollable */}
@@ -92,7 +111,7 @@ export function AttributePanel({
                   className="text-[10px] uppercase tracking-wider transition-colors font-medium"
                   style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}
                 >
-                  Clear
+                  Réinitialiser
                 </button>
               )}
             </div>
@@ -138,7 +157,7 @@ export function AttributePanel({
                         </span>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-[#5A5A5A] tabular-nums" style={{ fontFamily: 'Arial, sans-serif' }}>
-                            {classInfo.average.toFixed(2)}
+                            {formatPanelValue(classInfo.average)}
                           </span>
                           <motion.div
                             animate={{ rotate: expandedClasses.has(className) ? 90 : 0 }}
@@ -178,58 +197,71 @@ export function AttributePanel({
                         <div className="p-2 space-y-1.5" style={{ backgroundColor: theme.panelBackground }}>
                           {classInfo.attributes.map((attr, index: number) => {
                             const attrKey = `${className}.${attr.technicalName}`;
+                            const isAttrAvailable = isAtlasAttributeAvailable(attr, territory);
                             const isAttrSelected = selectedAttribute === attrKey;
                             const isOtherAttrSelected = hasSelection && !isAttrSelected;
                             const isFavorable = attr.favorable ?? classInfo.favorable;
                             const polarityColor = isFavorable ? FAVORABLE_COLOR : UNFAVORABLE_COLOR;
-                            const barValue = attr.value;
+                            const barValue = hasActiveFeature && isAttrAvailable ? attr.value : 0;
                             
                             return (
                               <div 
                                 key={index} 
                                 className={`flex items-center gap-2 bg-white rounded-lg p-2 transition-opacity ${
-                                  isOtherAttrSelected ? 'opacity-30' : 'opacity-100'
+                                  !isAttrAvailable ? 'opacity-45' : isOtherAttrSelected ? 'opacity-30' : 'opacity-100'
                                 }`}
                               >
                                 <button
-                                  onClick={() => onSelectAttribute(className, attr.technicalName)}
+                                  onClick={() => {
+                                    if (isAttrAvailable) onSelectAttribute(className, attr.technicalName);
+                                  }}
+                                  disabled={!isAttrAvailable}
                                   className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
                                     isAttrSelected
                                       ? ''
                                       : ''
-                                  }`}
+                                  } ${isAttrAvailable ? '' : 'cursor-not-allowed'}`}
                                   style={{
-                                    backgroundColor: isAttrSelected ? polarityColor : `${polarityColor}1A`,
-                                    boxShadow: isAttrSelected ? `0 0 0 2px ${polarityColor}33` : 'none'
+                                    backgroundColor: !isAttrAvailable ? '#E5E7EB' : isAttrSelected ? polarityColor : `${polarityColor}1A`,
+                                    boxShadow: isAttrSelected && isAttrAvailable ? `0 0 0 2px ${polarityColor}33` : 'none'
                                   }}
-                                  title="Visualiser cet attribut"
+                                  title={isAttrAvailable ? 'Visualiser cet attribut' : 'Attribut non disponible dans les données actuelles'}
                                 >
                                   <div
                                     className="w-1.5 h-1.5 rounded-full"
-                                    style={{ backgroundColor: isAttrSelected ? '#FFFFFF' : polarityColor }}
+                                    style={{ backgroundColor: !isAttrAvailable ? '#9CA3AF' : isAttrSelected ? '#FFFFFF' : polarityColor }}
                                   />
                                 </button>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1 mb-1">
-                                    <span className="text-[10px] text-[#1A1A1A]" style={{ fontFamily: 'Arial, sans-serif' }}>
+                                    <span
+                                      className="text-[10px]"
+                                      style={{ color: isAttrAvailable ? '#1A1A1A' : '#6B7280', fontFamily: 'Arial, sans-serif' }}
+                                    >
                                       {attr.name}
                                     </span>
-                                    <span className="text-[9px] text-[#AFAFAF]" style={{ fontFamily: 'Arial, sans-serif' }}>
+                                    <span
+                                      className="text-[9px]"
+                                      style={{ color: isAttrAvailable ? '#AFAFAF' : '#9CA3AF', fontFamily: 'Arial, sans-serif' }}
+                                    >
                                       ({attr.technicalName})
                                     </span>
                                   </div>
-                                  <div className="relative h-1.5 bg-[#E0DDD8] rounded-full overflow-hidden">
+                                  <div
+                                    className="relative h-1.5 rounded-full overflow-hidden"
+                                    style={{ backgroundColor: isAttrAvailable ? '#E0DDD8' : '#F3F4F6' }}
+                                  >
                                     <motion.div
                                       initial={{ width: 0 }}
                                       animate={{ width: `${barValue * 100}%` }}
                                       transition={{ duration: 0.4, delay: index * 0.03 }}
                                       className="absolute inset-y-0 left-0 rounded-full"
-                                      style={{ backgroundColor: ATTRIBUTE_BAR_COLOR }}
+                                      style={{ backgroundColor: isAttrAvailable ? ATTRIBUTE_BAR_COLOR : '#D1D5DB' }}
                                     />
                                   </div>
                                 </div>
                                 <div className="text-[10px] text-[#5A5A5A] w-8 text-right tabular-nums" style={{ fontFamily: 'Arial, sans-serif' }}>
-                                  {attr.value.toFixed(2)}
+                                  {isAttrAvailable ? formatPanelValue(attr.value) : emptyValueLabel}
                                 </div>
                               </div>
                             );
@@ -253,7 +285,9 @@ export function AttributePanel({
                 <div className="text-[10px] uppercase tracking-wider flex items-center justify-between" style={{ color: theme.accentDark, fontFamily: 'Arial, sans-serif' }}>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">Légende</span>
-                    <span className="text-[8px] text-[#7A7A7A] normal-case font-normal">({colorMode === 'quantile' ? 'quantiles' : 'linéaire'})</span>
+                    <span className="text-[8px] text-[#7A7A7A] normal-case font-normal">
+                      ({colorMode === 'quantile' ? 'quantiles' : 'linéaire'} · {activeColorScale.label})
+                    </span>
                   </div>
                   <ChevronRight className={`w-3 h-3 transition-transform ${showDistribution ? 'rotate-90' : ''}`} style={{ color: theme.accent }} />
                 </div>
@@ -292,7 +326,7 @@ export function AttributePanel({
                   style={{ boxShadow: `0 0 0 1px ${theme.accentBorder}` }}
                   onClick={onToggleDistribution}
                 >
-                  {VALUE_PALETTE.map((c, i) => (
+                  {activeColorScale.palette.map((c, i) => (
                     <div
                       key={i}
                       className="h-full flex-1 first:rounded-l-full last:rounded-r-full"
@@ -322,9 +356,9 @@ export function AttributePanel({
                     style={{ borderTop: `1px solid ${theme.accentBorder}` }}
                   >
                     {/* Vérification paramètres actifs (discret) */}
-                    {debugParams && (
+                    {showDebugParams && debugParams && (
                       <div className="mb-3 text-[9px] text-[#6b7280] font-mono leading-relaxed">
-                        <div>scale={scale} | mode={mode} | color={colorMode}</div>
+                        <div>scale={scale} | mode={mode} | color={colorMode} | palette={activeColorScale.id}</div>
                         <div>attr={debugParams.attr} | layer={debugParams.layerId}</div>
                         <div>th=[{debugParams.thresholds.map(t => t.toFixed(2)).join(', ')}]</div>
                       </div>

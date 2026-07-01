@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { getPaletteColor, VALUE_PALETTE, VALUE_THRESHOLDS } from '../colors';
-import { Box, CircleSlash, Compass, Download, Maximize2, Star, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  COLOR_SCALE_OPTIONS,
+  getColorScale,
+  getPaletteColor,
+  VALUE_THRESHOLDS,
+  type AtlasColorScale
+} from '../colors';
+import { Box, CircleSlash, Compass, Download, Maximize2, Palette, Star, ZoomIn, ZoomOut } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PMTiles, Protocol } from 'pmtiles';
@@ -68,7 +74,8 @@ interface HoveredAtlasFeature {
   properties: Record<string, unknown>;
   geometry: unknown;
   spatial_unit: SpatialUnit;
-  scores: AtlasScores;
+  scores: AtlasScores | null;
+  hoverNote?: string | null;
 }
 
 const ANALYSIS_BOUNDS: [[number, number], [number, number]] = [
@@ -116,6 +123,10 @@ const WEB_MERCATOR_WORLD_METERS = 40075016.686;
 const SEGMENT_DETAIL_ZOOM = 11;
 const SCALE_BLEND_START = 10.7;
 const SCALE_BLEND_END = 11.2;
+const SEGMENT_NO_DATA_COLOR = '#9CA3AF';
+const COLOR_INPUT_FALLBACK = -1;
+const SEGMENT_MASK_FIELD = 'rd_hors_agglo_masked';
+const SEGMENT_MASK_HOVER_NOTE = 'Tronçon de Route Départementale hors agglomération (rd_hors_agglo_masked)';
 const segmentOpacity = [
   'interpolate',
   ['linear'],
@@ -161,6 +172,8 @@ interface MapProps {
   territory: AnalysisTerritory;
   scale: AtlasScale;
   colorMode: 'linear' | 'quantile';
+  colorScale: AtlasColorScale;
+  onColorScaleChange: (colorScale: AtlasColorScale) => void;
   showDistribution: boolean;
   onHoverSegment: (segment: HoveredAtlasFeature | null) => void;
   onResetScaleToDefault?: () => void;
@@ -176,6 +189,8 @@ export function Map({
   territory,
   scale,
   colorMode,
+  colorScale,
+  onColorScaleChange,
   showDistribution,
   onHoverSegment,
   onResetScaleToDefault,
@@ -191,6 +206,7 @@ export function Map({
   const selectedAttributeRef = useRef<string | null>(selectedAttribute);
   const selectedClassRef = useRef<string | null>(selectedClass);
   const colorModeRef = useRef<'linear' | 'quantile'>(colorMode);
+  const colorScaleRef = useRef<AtlasColorScale>(colorScale);
   const lastModeRef = useRef<AtlasMode>(mode);
   const lastTerritoryRef = useRef<AnalysisTerritory>(territory);
   const scaleRef = useRef<AtlasScale>(scale);
@@ -254,6 +270,7 @@ export function Map({
   selectedAttributeRef.current = selectedAttribute;
   selectedClassRef.current = selectedClass;
   colorModeRef.current = colorMode;
+  colorScaleRef.current = colorScale;
   hoverSegmentRef.current = onHoverSegment;
   distributionRequestRef.current = onDistributionRequest;
   showDistributionRef.current = showDistribution;
@@ -434,7 +451,7 @@ export function Map({
 
     const sorted = [...values].sort((a, b) => a - b);
     const thresholds: number[] = [];
-    const paletteSteps = VALUE_PALETTE.length - 1;
+    const paletteSteps = getColorScale(colorScaleRef.current).palette.length - 1;
 
     for (let i = 1; i <= paletteSteps; i += 1) {
       const p = i / paletteSteps;
@@ -610,6 +627,12 @@ export function Map({
 
   const buildSegmentBaseOpacityExpression = () => ['interpolate', ['linear'], ['zoom'], 6, 0.98, 8, 0.95, 11, 0.92, 15, 0.88];
 
+  const shouldHideSegmentScores = (properties: Record<string, unknown>, spatialUnit: SpatialUnit) => {
+    if (spatialUnit !== 'segment') return false;
+    const maskValue = properties[SEGMENT_MASK_FIELD];
+    return maskValue === true || maskValue === 1 || maskValue === 'true' || maskValue === '1';
+  };
+
   const normalizeFeatureToDomainObject = (
     feature: any,
     spatialUnit: SpatialUnit
@@ -617,12 +640,14 @@ export function Map({
     if (!feature?.properties) return null;
 
     const properties = feature.properties as Record<string, unknown>;
+    const hideScores = shouldHideSegmentScores(properties, spatialUnit);
     return {
       id: feature.id,
       properties,
       geometry: feature.geometry,
       spatial_unit: spatialUnit,
-      scores: buildScoresFromProperties(properties)
+      scores: hideScores ? null : buildScoresFromProperties(properties),
+      hoverNote: hideScores ? SEGMENT_MASK_HOVER_NOTE : null
     };
   };
 
@@ -1905,6 +1930,11 @@ export function Map({
     appearance: 'none',
     WebkitAppearance: 'none'
   };
+  const paletteSelectStyle: CSSProperties = {
+    ...basemapSelectStyle,
+    width: 132,
+    padding: '0 34px 0 34px'
+  };
 
   const normalizedBearing = ((bearing % 360) + 360) % 360;
   const isNorthAligned = Math.min(normalizedBearing, 360 - normalizedBearing) < 1;
@@ -2186,6 +2216,11 @@ export function Map({
     setBasemap(nextBasemap);
   };
 
+  const handleColorScaleChange = (nextColorScale: AtlasColorScale) => {
+    if (nextColorScale === colorScaleRef.current) return;
+    onColorScaleChange(nextColorScale);
+  };
+
   // Keyboard shortcuts for labels, perspective, north reset and perimeter.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2249,25 +2284,43 @@ export function Map({
     return currentModeConfig.indexField;
   }
 
-  function colorRamp(attr: string, overrideThresholds?: number[]) {
-    const rawInput = ['coalesce', ['to-number', ['get', attr]], 0];
-    const input = rawInput;
+  function colorRamp(attr: string, overrideThresholds?: number[], noDataColor?: string) {
+    const input = noDataColor
+      ? ['to-number', ['get', attr], COLOR_INPUT_FALLBACK]
+      : ['coalesce', ['to-number', ['get', attr]], 0];
     const currentColorMode = colorModeRef.current;
+    const palette = getColorScale(colorScaleRef.current).palette;
 
     if (currentColorMode === 'linear') {
-      const expr: any[] = ['step', input, VALUE_PALETTE[0]];
+      const expr: any[] = ['step', input, palette[0]];
       VALUE_THRESHOLDS.forEach((threshold, index) => {
-        expr.push(threshold, VALUE_PALETTE[index + 1]);
+        expr.push(threshold, palette[index + 1] || palette[palette.length - 1]);
       });
-      return expr;
+      if (!noDataColor) return expr;
+      return [
+        'case',
+        ['boolean', ['get', SEGMENT_MASK_FIELD], false],
+        noDataColor,
+        ['all', ['>=', input, 0], ['<=', input, 1]],
+        expr,
+        noDataColor
+      ];
     }
 
-    const expr: any[] = ['step', input, VALUE_PALETTE[0]];
+    const expr: any[] = ['step', input, palette[0]];
     const thresholds = getQuantileThresholdsForAttr(attr, overrideThresholds);
     thresholds.forEach((threshold, index) => {
-      expr.push(threshold, VALUE_PALETTE[index + 1]);
+      expr.push(threshold, palette[index + 1] || palette[palette.length - 1]);
     });
-    return expr;
+    if (!noDataColor) return expr;
+    return [
+      'case',
+      ['boolean', ['get', SEGMENT_MASK_FIELD], false],
+      noDataColor,
+      ['all', ['>=', input, 0], ['<=', input, 1]],
+      expr,
+      noDataColor
+    ];
   }
 
   function applyRampToMap(map: any, attr: string, thresholdsOverride?: number[]) {
@@ -2276,7 +2329,8 @@ export function Map({
         attr,
         colorModeRef.current === 'quantile'
           ? getQuantileThresholdsForScaleAttr(attr, 'segment', map, thresholdsOverride)
-          : undefined
+          : undefined,
+        SEGMENT_NO_DATA_COLOR
       );
       map.setPaintProperty('segments-layer', 'line-color', ramp as any);
     }
@@ -3041,7 +3095,7 @@ export function Map({
   }
 
   function colorForValue(value: number, thresholds?: number[]): string {
-    return getPaletteColor(value, thresholds || VALUE_THRESHOLDS);
+    return getPaletteColor(value, thresholds || VALUE_THRESHOLDS, getColorScale(colorScaleRef.current).palette);
   }
 
   function computeDistribution(attrOverride?: string, thresholdsOverride?: number[]): DistributionData | null {
@@ -3241,7 +3295,7 @@ export function Map({
 
     updateScaleProgress();
     requestAnimationFrame(handleIdle);
-  }, [mapLoaded, scale, mode, territory, colorMode, quantileMap, thresholdManifest]);
+  }, [mapLoaded, scale, mode, territory, colorMode, colorScale, quantileMap, thresholdManifest]);
 
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
@@ -3260,7 +3314,7 @@ export function Map({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [mapLoaded, selectedAttribute, selectedClass, mode, scale, colorMode, showDistribution, quantileMap, thresholdManifest]);
+  }, [mapLoaded, selectedAttribute, selectedClass, mode, scale, colorMode, colorScale, showDistribution, quantileMap, thresholdManifest]);
 
   function buildScoresFromProperties(props: Record<string, unknown>): AtlasScores {
     const normalizeValue = (rawValue: unknown, attrName: string): number => {
@@ -3544,6 +3598,35 @@ export function Map({
             <option value="swissImagery">Swiss Imagerie</option>
             <option value="none">Sans fond</option>
           </select>
+          <div
+            className="map-secondary-control map-palette-select-wrap"
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: '0 0 auto' }}
+          >
+            <Palette
+              className="w-3.5 h-3.5"
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 12,
+                color: '#5A5A5A',
+                pointerEvents: 'none'
+              }}
+            />
+            <select
+              value={colorScale}
+              onChange={(event) => handleColorScaleChange(event.target.value as AtlasColorScale)}
+              className="map-palette-select"
+              style={paletteSelectStyle}
+              title="Échelle de couleur"
+              aria-label="Échelle de couleur"
+            >
+              {COLOR_SCALE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div
             ref={scaleHostRef}
             style={{

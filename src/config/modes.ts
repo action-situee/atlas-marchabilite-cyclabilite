@@ -6,6 +6,7 @@ export interface AtlasAttributeDefinition {
   name: string;
   technicalName: string;
   favorable?: boolean;
+  availableByTerritory?: Partial<Record<AnalysisTerritory, boolean>>;
 }
 
 export interface AtlasAttributeScore extends AtlasAttributeDefinition {
@@ -107,14 +108,14 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     description: 'Est-ce commode de marcher ici ?',
     field: 'Classe_Commodité',
     attributes: [
-      { name: 'Niveau sonore', technicalName: 'bruit', favorable: false },
+      { name: 'Temps d’attente', technicalName: 'attente', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: false } },
+      { name: 'Niveau sonore', technicalName: 'bruit', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: true } },
       { name: 'Température', technicalName: 'temperature', favorable: false },
-      { name: "Conflits d'usage", technicalName: 'conflit_usage', favorable: false },
       { name: 'Conflits modes doux', technicalName: 'conflit_md', favorable: false },
-      { name: "Qualité de l'air", technicalName: 'air', favorable: false },
-      { name: 'Temps d’attente', technicalName: 'attente', favorable: false },
-      { name: 'Charge', technicalName: 'charge', favorable: false },
-      { name: 'Couverture végétale', technicalName: 'canopee', favorable: true }
+      { name: 'Couverture végétale', technicalName: 'canopee', favorable: true },
+      { name: 'Bancs', technicalName: 'banc', favorable: true },
+      { name: 'Toilettes', technicalName: 'toilette', favorable: true },
+      { name: "Qualité de l'air", technicalName: 'air', favorable: false }
     ]
   },
   {
@@ -125,13 +126,11 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     field: 'Classe_Attractivité',
     attributes: [
       { name: "Plans d'eau", technicalName: 'lac_cours_deau', favorable: true },
-      { name: 'Fontaines', technicalName: 'fontaines', favorable: true },
+      { name: 'Fontaines', technicalName: 'fontaine', favorable: true },
       { name: 'Espaces ouverts', technicalName: 'espaces_ouverts', favorable: true },
       { name: 'Commerces actifs', technicalName: 'rez_actif', favorable: true },
       { name: 'Transports publics', technicalName: 'tp', favorable: true },
-      { name: 'Aménités', technicalName: 'amenite', favorable: true },
-      { name: 'Bancs', technicalName: 'banc', favorable: true },
-      { name: 'Toilettes', technicalName: 'toilette', favorable: true }
+      { name: 'Aménités', technicalName: 'amenite', favorable: true }
     ]
   },
   {
@@ -142,10 +141,10 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     field: 'Classe_Infrastructure',
     attributes: [
       { name: 'Connectivité réseau', technicalName: 'connectivite', favorable: true },
-      { name: 'Largeur trottoir', technicalName: 'largeur_trottoir', favorable: true },
+      { name: 'Largeur trottoir', technicalName: 'largeur_trottoir', favorable: true, availableByTerritory: { grandGeneve: false, cantonGeneve: true } },
       { name: 'Revêtement', technicalName: 'chemin', favorable: true },
-      { name: 'Stationnement gênant', technicalName: 'stationnement_genant', favorable: false },
-      { name: 'Pente', technicalName: 'topographie', favorable: false }
+      { name: 'Stationnement gênant', technicalName: 'stationnement_genant', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: true } },
+      { name: 'Pente', technicalName: 'pente', favorable: false }
     ]
   },
   {
@@ -156,7 +155,7 @@ const WALKABILITY_CLASSES: AtlasClassDefinition[] = [
     field: 'Classe_Sécurité',
     attributes: [
       { name: 'Historique accidents', technicalName: 'accident', favorable: false },
-      { name: 'Charge', technicalName: 'charge', favorable: false },
+      { name: 'Charge', technicalName: 'charge', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: false } },
       { name: 'Zone apaisée', technicalName: 'zone_apaisee', favorable: true },
       { name: 'Zone piétonne', technicalName: 'zone_pietonne', favorable: true },
       { name: 'Limite de vitesse', technicalName: 'vitesse', favorable: false },
@@ -174,6 +173,7 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     field: 'Classe_attractivite',
     attributes: [
       { name: 'Aménités', technicalName: 'amenite', favorable: true },
+      { name: 'Itinéraires loisirs', technicalName: 'itineraire_loisirs', favorable: true, availableByTerritory: { grandGeneve: false, cantonGeneve: false } },
       { name: 'Connectivité', technicalName: 'connectivite', favorable: true },
       { name: 'Pente', technicalName: 'pente', favorable: false }
     ]
@@ -216,9 +216,11 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
     attributes: [
       { name: 'Piste cyclable', technicalName: 'piste', favorable: true },
       { name: 'Bande cyclable', technicalName: 'bande', favorable: true },
+      { name: 'Largeur', technicalName: 'largeur', favorable: true, availableByTerritory: { grandGeneve: false, cantonGeneve: false } },
       { name: 'Revêtement', technicalName: 'revetement', favorable: true },
       { name: 'Giratoire', technicalName: 'giratoire', favorable: false },
-      { name: 'Tourner à droite', technicalName: 'tourner_droite', favorable: true }
+      { name: 'Tourner à droite', technicalName: 'tourner_droite', favorable: true },
+      { name: 'Hauteur de rebord', technicalName: 'hauteur_rebord', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: false } }
     ]
   },
   {
@@ -232,7 +234,8 @@ const BIKEABILITY_CLASSES: AtlasClassDefinition[] = [
       { name: 'Zone apaisée', technicalName: 'zone_apaisee', favorable: true },
       { name: 'Vitesse motorisée', technicalName: 'vitesse_motorisee', favorable: false },
       { name: 'Conflits modes doux', technicalName: 'conflit_md', favorable: false },
-      { name: 'Historique accidents', technicalName: 'accident', favorable: false }
+      { name: 'Historique accidents', technicalName: 'accident', favorable: false },
+      { name: 'Charge trafic', technicalName: 'charge_trafic', favorable: false, availableByTerritory: { grandGeneve: false, cantonGeneve: false } }
     ]
   }
 ];
@@ -381,6 +384,13 @@ export function getAttributeKeys(mode: AtlasMode): Set<string> {
     config.indexField,
     ...config.classes.flatMap((classDef) => [classDef.field, ...classDef.attributes.map((attribute) => attribute.technicalName)])
   ]);
+}
+
+export function isAtlasAttributeAvailable(
+  attribute: AtlasAttributeDefinition,
+  territory: AnalysisTerritory
+): boolean {
+  return attribute.availableByTerritory?.[territory] ?? true;
 }
 
 export function getClassFieldMap(mode: AtlasMode): Record<string, string> {
