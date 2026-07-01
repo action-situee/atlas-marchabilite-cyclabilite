@@ -23,7 +23,7 @@ import {
   type AtlasScores
 } from '../config/modes';
 
-type BasemapMode = 'voyager' | 'swissLight' | 'swissImagery' | 'none';
+type BasemapMode = 'voyager' | 'swissLight' | 'swissImagery' | 'openFreeMap3d' | 'none';
 type CameraState = {
   center: [number, number];
   zoom: number;
@@ -76,6 +76,7 @@ interface HoveredAtlasFeature {
   spatial_unit: SpatialUnit;
   scores: AtlasScores | null;
   hoverNote?: string | null;
+  isMasked?: boolean;
 }
 
 const ANALYSIS_BOUNDS: [[number, number], [number, number]] = [
@@ -95,6 +96,8 @@ const DEFAULT_PITCH = 0;
 const DEFAULT_VOYAGER_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 const DEFAULT_SWISS_LIGHT_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json';
 const DEFAULT_SWISS_IMAGERY_STYLE = 'https://vectortiles.geo.admin.ch/styles/ch.swisstopo.imagerybasemap.vt/style.json';
+const DEFAULT_OPENFREEMAP_3D_STYLE = 'https://tiles.openfreemap.org/styles/bright';
+const DEFAULT_OPENFREEMAP_PLANET_SOURCE = 'https://tiles.openfreemap.org/planet';
 const ACTION_SITUEE_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/380a38d67ffe6f8270cf52c0d9431d1f05f3b12e/images/Fichier_36-5.svg';
 const GENF_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/Logo_Genf.svg';
 const FNS_LOGO_URL = 'https://raw.githubusercontent.com/action-situee/assets/refs/heads/main/images/logo-fns.png';
@@ -127,6 +130,12 @@ const SEGMENT_NO_DATA_COLOR = '#9CA3AF';
 const COLOR_INPUT_FALLBACK = -1;
 const SEGMENT_MASK_FIELD = 'rd_hors_agglo_masked';
 const SEGMENT_MASK_HOVER_NOTE = 'Tronçon de Route Départementale hors agglomération (rd_hors_agglo_masked)';
+const OPENFREEMAP_3D_SOURCE_ID = 'openfreemap-planet';
+const OPENFREEMAP_3D_LAYER_ID = '3d-buildings';
+const OPENFREEMAP_3D_MIN_ZOOM = 14;
+const OPENFREEMAP_3D_TARGET_ZOOM = 14.2;
+const OPENFREEMAP_3D_TARGET_PITCH = 48;
+const OPENFREEMAP_3D_TARGET_BEARING = -18;
 const segmentOpacity = [
   'interpolate',
   ['linear'],
@@ -162,8 +171,17 @@ const carreauOutlineOpacity = [
 ];
 const LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin|airport|airfield|aerodrome|aeroway/i;
 const PLACE_LABEL_LAYER_PATTERN = /country|state|province|region|place|settlement|locality|commune|municipality|city|town|village|hamlet|admin/i;
+const ADDRESS_LABEL_LAYER_PATTERN = /address|addr|house.?number|housenumber|building.?number/i;
 const WATER_LAYER_PATTERN = /water|lake|ocean|river|canal|stream|reservoir/i;
 const TRANSPORT_LAYER_PATTERN = /road|street|highway|motorway|trunk|primary|secondary|tertiary|rail|railway/i;
+const BASEMAP_ROAD_LAYER_PATTERN = /road|street|highway|motorway|trunk|primary|secondary|tertiary|minor|major|service|path/i;
+const BASEMAP_ROAD_SOURCE_LAYER_PATTERN = /transportation|transport|road|street|highway/i;
+const BASEMAP_ROAD_EXCLUDE_PATTERN = /(^|[-_])rail(way)?($|[-_])|ferry|aerialway|runway|aeroway/i;
+const MUTED_BASEMAP_ROAD_COLOR = '#CFCFCC';
+const MUTED_BASEMAP_ROAD_OPACITY = 0.34;
+const MUTED_BASEMAP_ROAD_CASING_OPACITY = 0.22;
+const MUTED_BASEMAP_ROAD_3D_OPACITY = 0.26;
+const MUTED_BASEMAP_ROAD_3D_CASING_OPACITY = 0.16;
 
 interface MapProps {
   selectedAttribute: string | null;
@@ -232,6 +250,7 @@ export function Map({
   const loadingTimeoutRef = useRef<number | null>(null);
   const protocolRef = useRef<Protocol | null>(null);
   const displayScaleRef = useRef<AtlasScale>(scale);
+  const basemapRef = useRef<BasemapMode>('voyager');
   const thresholdManifestRef = useRef<AttributeThresholdManifest | null>(null);
   const thresholdManifestLoadedRef = useRef(false);
   const corridorOverviewDataRef = useRef<{ corridors: any; mask: any } | null>(null);
@@ -271,6 +290,7 @@ export function Map({
   selectedClassRef.current = selectedClass;
   colorModeRef.current = colorMode;
   colorScaleRef.current = colorScale;
+  basemapRef.current = basemap;
   hoverSegmentRef.current = onHoverSegment;
   distributionRequestRef.current = onDistributionRequest;
   showDistributionRef.current = showDistribution;
@@ -367,6 +387,9 @@ export function Map({
     }
     if (currentBasemap === 'swissImagery') {
       return resolveStyleUrl(env.VITE_MAP_STYLE_SWISS_IMAGERY || DEFAULT_SWISS_IMAGERY_STYLE);
+    }
+    if (currentBasemap === 'openFreeMap3d') {
+      return resolveStyleUrl(env.VITE_MAP_STYLE_3D || DEFAULT_OPENFREEMAP_3D_STYLE);
     }
     return resolveStyleUrl(env.VITE_MAP_STYLE_VOYAGER || env.VITE_MAP_STYLE_POSITRON || env.VITE_MAP_STYLE_LIGHT || DEFAULT_VOYAGER_STYLE);
   };
@@ -647,7 +670,8 @@ export function Map({
       geometry: feature.geometry,
       spatial_unit: spatialUnit,
       scores: hideScores ? null : buildScoresFromProperties(properties),
-      hoverNote: hideScores ? SEGMENT_MASK_HOVER_NOTE : null
+      hoverNote: hideScores ? SEGMENT_MASK_HOVER_NOTE : null,
+      isMasked: hideScores
     };
   };
 
@@ -694,6 +718,80 @@ export function Map({
       .map((layer: any) => layer.id);
   };
 
+  const getAddressLabelLayerIds = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    const textLayers = layers.filter((layer: any) => {
+      if (layer.type !== 'symbol') return false;
+      return typeof layer.layout?.['text-field'] !== 'undefined';
+    });
+    return textLayers
+      .filter((layer: any) => {
+        const layerId = String(layer.id || '');
+        const sourceLayer = String(layer['source-layer'] || '');
+        return ADDRESS_LABEL_LAYER_PATTERN.test(layerId) || ADDRESS_LABEL_LAYER_PATTERN.test(sourceLayer);
+      })
+      .map((layer: any) => layer.id);
+  };
+
+  const getFirstLabelLayerId = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    return layers.find((layer: any) => (
+      layer.type === 'symbol' && typeof layer.layout?.['text-field'] !== 'undefined'
+    ))?.id;
+  };
+
+  const add3dBuildings = (map: any) => {
+    if (map.getLayer(OPENFREEMAP_3D_LAYER_ID)) return;
+
+    if (!map.getSource(OPENFREEMAP_3D_SOURCE_ID)) {
+      map.addSource(OPENFREEMAP_3D_SOURCE_ID, {
+        type: 'vector',
+        url: env.VITE_OPENFREEMAP_PLANET_SOURCE || DEFAULT_OPENFREEMAP_PLANET_SOURCE
+      });
+    }
+
+    const heightExpression: any[] = ['to-number', ['get', 'render_height'], 0];
+    const layerDefinition = {
+      id: OPENFREEMAP_3D_LAYER_ID,
+      source: OPENFREEMAP_3D_SOURCE_ID,
+      'source-layer': 'building',
+      type: 'fill-extrusion',
+      minzoom: OPENFREEMAP_3D_MIN_ZOOM,
+      filter: ['!=', ['get', 'hide_3d'], true],
+      paint: {
+        'fill-extrusion-color': [
+          'interpolate', ['linear'], heightExpression,
+          0, '#ded6cc',
+          30, '#c6bdb2',
+          80, '#a8a097'
+        ],
+        'fill-extrusion-height': [
+          'interpolate', ['linear'], ['zoom'],
+          OPENFREEMAP_3D_MIN_ZOOM, 0,
+          16, heightExpression
+        ],
+        'fill-extrusion-base': 0,
+        'fill-extrusion-opacity': 1
+      }
+    };
+    const labelLayerId = getFirstLabelLayerId(map);
+    if (labelLayerId) {
+      map.addLayer(layerDefinition, labelLayerId);
+    } else {
+      map.addLayer(layerDefinition);
+    }
+  };
+
+  const apply3dCamera = (map: any) => {
+    const nextBearing = Math.abs(map.getBearing()) < 1 ? OPENFREEMAP_3D_TARGET_BEARING : map.getBearing();
+    map.easeTo({
+      zoom: Math.max(map.getZoom(), OPENFREEMAP_3D_TARGET_ZOOM),
+      pitch: Math.max(map.getPitch(), OPENFREEMAP_3D_TARGET_PITCH),
+      bearing: nextBearing,
+      duration: 650
+    });
+  };
+
   const applyFrenchPlaceLabels = (map: any) => {
     const placeLabelIds = getPlaceLabelLayerIds(map);
     const frenchLabelExpression: any[] = [
@@ -720,6 +818,19 @@ export function Map({
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
       }
+    }
+    if (basemapRef.current === 'openFreeMap3d') {
+      for (const layerId of getAddressLabelLayerIds(map)) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', 'none');
+        }
+      }
+    }
+  };
+
+  const move3dBuildingsAboveGroundLayers = (map: any) => {
+    if (map.getLayer(OPENFREEMAP_3D_LAYER_ID)) {
+      map.moveLayer(OPENFREEMAP_3D_LAYER_ID);
     }
   };
 
@@ -764,6 +875,37 @@ export function Map({
       })
       .map((layer: any) => layer.id)
       .filter((layerId: string) => !layerId.startsWith('corridor') && !layerId.startsWith('provelo') && !layerId.startsWith('perimeter') && !layerId.startsWith('segments') && !layerId.startsWith('carreau200') && !layerId.startsWith('zones-'));
+  };
+
+  const getBasemapRoadLayerIds = (map: any) => {
+    const layers = map.getStyle()?.layers || [];
+    return layers
+      .filter((layer: any) => {
+        if (layer.type !== 'line') return false;
+        const layerId = String(layer.id || '');
+        const sourceLayer = String(layer['source-layer'] || '');
+        if (BASEMAP_ROAD_EXCLUDE_PATTERN.test(layerId) || BASEMAP_ROAD_EXCLUDE_PATTERN.test(sourceLayer)) return false;
+        return BASEMAP_ROAD_LAYER_PATTERN.test(layerId) ||
+          BASEMAP_ROAD_LAYER_PATTERN.test(sourceLayer) ||
+          BASEMAP_ROAD_SOURCE_LAYER_PATTERN.test(sourceLayer);
+      })
+      .map((layer: any) => layer.id)
+      .filter((layerId: string) => !layerId.startsWith('corridor') && !layerId.startsWith('provelo') && !layerId.startsWith('perimeter') && !layerId.startsWith('segments') && !layerId.startsWith('carreau200') && !layerId.startsWith('zones-'));
+  };
+
+  const applyMutedBasemapRoadPaint = (map: any, currentBasemap: BasemapMode = basemapRef.current) => {
+    if (currentBasemap !== 'voyager' && currentBasemap !== 'openFreeMap3d') return;
+
+    const is3dBasemap = currentBasemap === 'openFreeMap3d';
+    for (const layerId of getBasemapRoadLayerIds(map)) {
+      if (!map.getLayer(layerId)) continue;
+      const isCasingLayer = /case|casing|tunnel|bridge/i.test(layerId);
+      const opacity = is3dBasemap
+        ? isCasingLayer ? MUTED_BASEMAP_ROAD_3D_CASING_OPACITY : MUTED_BASEMAP_ROAD_3D_OPACITY
+        : isCasingLayer ? MUTED_BASEMAP_ROAD_CASING_OPACITY : MUTED_BASEMAP_ROAD_OPACITY;
+      map.setPaintProperty(layerId, 'line-color', MUTED_BASEMAP_ROAD_COLOR);
+      map.setPaintProperty(layerId, 'line-opacity', opacity);
+    }
   };
 
   const getAtlasLayerIds = () => [
@@ -1258,6 +1400,7 @@ export function Map({
     if (requestedScale !== 'segment') {
       moveTransportLayersAboveAtlas(map);
     }
+    move3dBuildingsAboveGroundLayers(map);
     moveLabelLayersToTop(map);
     moveCorridorMaskLayer(map, currentMode);
     moveCorridorsOverviewLayers(map, currentMode);
@@ -1683,6 +1826,7 @@ export function Map({
     }
 
     applyFrenchPlaceLabels(map);
+    applyMutedBasemapRoadPaint(map);
     reorderMapLayers(map, currentMode, currentScale());
     applyTextLayerVisibility(map, showLabelsRef.current);
     applyScaleVisibility(map, currentScale(), currentMode, currentTerritory);
@@ -2060,6 +2204,13 @@ export function Map({
       syncScaleFromMapZoom(map);
     };
 
+    const handleStyleLoad = () => {
+      applyMutedBasemapRoadPaint(map, basemap);
+      if (basemap === 'openFreeMap3d') {
+        add3dBuildings(map);
+      }
+    };
+
     map.on('rotate', updateOrientation);
     map.on('pitch', updateOrientation);
     map.on('move', queueCameraSync);
@@ -2067,9 +2218,14 @@ export function Map({
     map.on('zoom', handleZoomScaleSync);
     map.on('zoomend', handleZoomScaleSync);
     map.on('resize', handleResize);
+    map.on('style.load', handleStyleLoad);
     queueCameraSync();
 
     map.once('load', () => {
+      handleStyleLoad();
+      if (basemap === 'openFreeMap3d') {
+        apply3dCamera(map);
+      }
       setMapLoaded(true);
       refreshAtlasData(map, shouldRecomputeAnalytics, mode, territory);
     });
@@ -2085,6 +2241,7 @@ export function Map({
       map.off('zoom', handleZoomScaleSync);
       map.off('zoomend', handleZoomScaleSync);
       map.off('resize', handleResize);
+      map.off('style.load', handleStyleLoad);
       if (cameraAnimationFrameRef.current !== null) {
         cancelAnimationFrame(cameraAnimationFrameRef.current);
         cameraAnimationFrameRef.current = null;
@@ -2552,8 +2709,9 @@ export function Map({
   };
 
   const getBasemapLabel = (nextBasemap: BasemapMode) => {
-    if (nextBasemap === 'swissLight') return 'Swiss Light';
-    if (nextBasemap === 'swissImagery') return 'Swiss Imagerie';
+    if (nextBasemap === 'openFreeMap3d') return '3D bâtiments';
+    if (nextBasemap === 'swissLight') return 'Swisstopo';
+    if (nextBasemap === 'swissImagery') return 'Satellite';
     if (nextBasemap === 'none') return 'Sans fond';
     return 'Voyager';
   };
@@ -3054,6 +3212,10 @@ export function Map({
         });
       });
 
+      if (basemap === 'openFreeMap3d') {
+        add3dBuildings(exportMap);
+      }
+      applyMutedBasemapRoadPaint(exportMap, basemap);
       ensureAtlasLayers(exportMap, mode, territory);
       if (mode === 'bikeability' && showCorridorMaskOverviewRef.current) {
         await ensureCorridorOverviewGeoJsonLayers(exportMap, mode);
@@ -3389,7 +3551,7 @@ export function Map({
         : null;
       if (normalizedFeature) {
         hoverSegmentRef.current(normalizedFeature);
-        map.getCanvas().style.cursor = 'pointer';
+        map.getCanvas().style.cursor = normalizedFeature.isMasked ? 'not-allowed' : 'pointer';
       } else {
         hoverSegmentRef.current(null);
         map.getCanvas().style.cursor = '';
@@ -3594,8 +3756,9 @@ export function Map({
             title="Fond de carte"
           >
             <option value="voyager">Voyager</option>
-            <option value="swissLight">Swiss Light</option>
-            <option value="swissImagery">Swiss Imagerie</option>
+            <option value="openFreeMap3d">3D bâtiments</option>
+            <option value="swissLight">Swisstopo</option>
+            <option value="swissImagery">Satellite</option>
             <option value="none">Sans fond</option>
           </select>
           <div
